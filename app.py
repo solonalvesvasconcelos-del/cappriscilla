@@ -54,7 +54,7 @@ def salvar_banco_usuarios(dados_usuarios):
     with open(DB_USERS, "w") as f:
         json.dump(dados_usuarios, f)
 
-# --- INICIALIZAÇÃO DE BANCO DE DADOS, LOGS E CORREÇÃO EM LOTE ---
+# --- INICIALIZAÇÃO DE BANCO DE DADOS, LOGS E CONVERSÃO EM LOTE ---
 if not os.path.exists(DB_USERS):
     admin_senha_cripto = gerar_senha_segura("hgujp2026")
     dados_iniciais = {
@@ -66,7 +66,7 @@ if not os.path.exists(DB_USERS):
     }
     salvar_banco_usuarios(dados_iniciais)
 else:
-    # --- MIGRATION: FORÇA TODOS OS USUÁRIOS EXISTENTES A SEREM ADMIN ---
+    # --- ASSEGURA QUE TODOS OS USUÁRIOS EXISTENTES SEJAM ADMIN ---
     try:
         usuarios_atuais = carregar_usuarios()
         alteracao_detectada = False
@@ -76,12 +76,12 @@ else:
                 usuarios_atuais[usuario]["perfil"] = "admin"
                 alteracao_detectada = True
         
-        # Só reescreve o arquivo JSON se houver algum usuário para atualizar
         if alteracao_detectada:
             salvar_banco_usuarios(usuarios_atuais)
-    except Exception as e:
+    except Exception:
         pass
 
+# Inicializa o arquivo de logs limpo com o cabeçalho correto de 5 colunas
 if not os.path.exists(LOG_FILE):
     df_logs_init = pd.DataFrame(columns=["Data_Hora", "Utilizador", "Perfil", "Evento", "Status"])
     df_logs_init.to_csv(LOG_FILE, index=False)
@@ -141,7 +141,7 @@ estilo_css = """
 st.markdown(estilo_css, unsafe_allow_html=True)
 
 
-# --- PAINEL: GERENCIAR OPERADORES ---
+# --- PAINEL: GERENCIAR OPERADORES (RESTRITO AO PERFIL ADMIN) ---
 def componente_gerenciar_operadores():
     st.markdown('<h1 class="main-title">GERENCIAMENTO DE OPERADORES</h1>', unsafe_allow_html=True)
     st.markdown('<p class="sub-title">HGuJP — Controle de Credenciais, Níveis de Acesso e Perfis</p>', unsafe_allow_html=True)
@@ -298,7 +298,7 @@ else:
             
             sexo_selecionado = st.sidebar.multiselect("Selecione o Sexo:", options=df["Sexo"].unique(), default=df["Sexo"].unique())
 
-            # Logica de comparação para detectar modificações em filtros
+            # Lógica de comparação para detectar modificações em filtros
             estado_filtros_atual = {
                 "anos": anos_selecionados, "idade": idade_selecionada, 
                 "setores": setores_selecionados, "especialidades": especialidades_selecionadas, "sexo": sexo_selecionado
@@ -407,7 +407,8 @@ else:
         st.markdown('<p class="sub-title">HGuJP — Histórico de Acessos, Cliques, Filtros e Ações de Utilizadores</p>', unsafe_allow_html=True)
         
         try:
-            df_logs = pd.read_csv(LOG_FILE)
+            # Tratamento adaptivo: ignora linhas corrompidas antigas de 4 colunas se houverem
+            df_logs = pd.read_csv(LOG_FILE, on_bad_lines='skip')
             df_logs = df_logs.iloc[::-1]
             
             c1, c2 = st.columns(2)
