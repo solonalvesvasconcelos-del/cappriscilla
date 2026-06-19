@@ -5,7 +5,7 @@ import os
 import json
 import hashlib
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # 1. CONFIGURAÇÃO DA PÁGINA (OBRIGATORIAMENTE A PRIMEIRA INSTRUÇÃO)
 st.set_page_config(
@@ -18,6 +18,12 @@ st.set_page_config(
 DB_USERS = "usuarios_db.json"
 LOG_FILE = "sistema_logs.csv"
 MAX_TENTATIVAS = 3  # Limite para bloqueio de segurança
+
+# --- FUNÇÃO CENTRAL DE HORÁRIO LOCAL (BRASÍLIA UTC-3) ---
+def obter_hora_brasilia():
+    """Retorna o datetime atual ajustado para o fuso horário de Brasília (UTC-3)."""
+    fuso_brasilia = timezone(timedelta(hours=-3))
+    return datetime.now(timezone.utc).astimezone(fuso_brasilia).replace(tzinfo=None)
 
 # --- FUNÇÕES AVANÇADAS DE CRIPTOGRAFIA (SALT + PBKDF2) ---
 def gerar_senha_segura(senha_pura):
@@ -58,7 +64,7 @@ def salvar_banco_usuarios(dados_usuarios):
 # --- INICIALIZAÇÃO DO BANCO DE DADOS E ESTRUTURAS ---
 if not os.path.exists(DB_USERS):
     admin_senha_cripto = gerar_senha_segura("hgujp2026")
-    agora = datetime.now()
+    agora = obter_hora_brasilia()
     validade = agora + timedelta(days=365)
     dados_iniciais = {
         "admin": {
@@ -75,7 +81,7 @@ else:
     try:
         usuarios_atuais = carregar_usuarios()
         alteracao_detectada = False
-        agora = datetime.now()
+        agora = obter_hora_brasilia()
         
         for usuario, info in usuarios_atuais.items():
             if "tentativas_falhas" not in info:
@@ -83,6 +89,13 @@ else:
                 alteracao_detectada = True
             if "ativo" not in info:
                 usuarios_atuais[usuario]["ativo"] = True
+                alteracao_detectada = True
+            if "validade_ate" not in info:
+                try:
+                    criado_em = datetime.strptime(info.get("criado_em", agora.strftime("%Y-%m-%d %H:%M:%S")), "%Y-%m-%d %H:%M:%S")
+                except:
+                    criado_em = agora
+                usuarios_atuais[usuario]["validade_ate"] = (criado_em + timedelta(days=365)).strftime("%Y-%m-%d %H:%M:%S")
                 alteracao_detectada = True
         
         if alteracao_detectada:
@@ -98,7 +111,7 @@ if not os.path.exists(LOG_FILE):
 def registar_log(usuario, perfil, evento, status):
     """Regista um evento de auditoria detalhado no ficheiro CSV."""
     novo_log = {
-        "Data_Hora": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "Data_Hora": obter_hora_brasilia().strftime("%Y-%m-%d %H:%M:%S"),
         "Utilizador": str(usuario) if usuario else "ANÓNIMO",
         "Perfil": str(perfil) if perfil else "N/A",
         "Evento": str(evento),
@@ -111,7 +124,7 @@ def salvar_usuario(usuario, senha_pura, perfil_selecionado, ativo_selecionado):
     usuarios = carregar_usuarios()
     if usuario in usuarios:
         return False
-    agora = datetime.now()
+    agora = obter_hora_brasilia()
     validade = agora + timedelta(days=365)
     usuarios[usuario] = {
         "senha": gerar_senha_segura(senha_pura), 
@@ -305,14 +318,12 @@ def tela_autenticacao():
                 if usuario in usuarios:
                     info_user = usuarios[usuario]
                     
-                    # Verifica se o operador já está bloqueado
                     if not info_user.get("ativo", True) or info_user.get("tentativas_falhas", 0) >= MAX_TENTATIVAS:
                         registar_log(usuario, info_user.get("perfil", "N/A"), "Tentativa de Login", "Bloqueado - Conta Inativa ou Bloqueada")
                         st.error("⚠️ Esta conta está inativa ou bloqueada por tentativas excessivas de login. Contate o Administrador.")
                         st.stop()
                         
                     if verificar_senha_segura(senha, info_user["senha"]):
-                        # Reseta o contador de falhas em caso de sucesso
                         info_user["tentativas_falhas"] = 0
                         usuarios[usuario] = info_user
                         salvar_banco_usuarios(usuarios)
@@ -320,7 +331,7 @@ def tela_autenticacao():
                         data_validade_str = info_user.get("validade_ate")
                         if data_validade_str:
                             data_validade = datetime.strptime(data_validade_str, "%Y-%m-%d %H:%M:%S")
-                            if datetime.now() > data_validade:
+                            if obter_hora_brasilia() > data_validade:
                                 registar_log(usuario, info_user.get("perfil", "N/A"), "Tentativa de Login", "Bloqueado - Validade Expirada")
                                 st.error("❌ A validade desta credencial expirou.")
                                 st.stop()
@@ -334,7 +345,6 @@ def tela_autenticacao():
                         st.success("Autenticação efetuada!")
                         st.rerun()
                     else:
-                        # Incrementa falhas consecutivas (Proteção Brute Force)
                         info_user["tentativas_falhas"] = info_user.get("tentativas_falhas", 0) + 1
                         avisos_restantes = MAX_TENTATIVAS - info_user["tentativas_falhas"]
                         
@@ -412,8 +422,7 @@ else:
 
             st.sidebar.markdown("<h3 style='color: #64B5F6;'>Filtros de Pesquisa</h3>", unsafe_allow_html=True)
             
-            # NOVO FILTRO AVANÇADO DE TEXTO: BUSCA POR CID OU DOENÇA
-            busca_cid_doenca = st.sidebar.text_input("🔍 Buscar Código CID ou Patologia:", placeholder="Ex: Dengue, I10, Diabetes...").strip()
+            busca_cid_doenca = st.sidebar.text_input("🔍 Buscar Código CID ou Patologia:", placeholder="Ex: Dengue, I10...").strip()
 
             anos_disponiveis = sorted(df["Ref_Ano"].unique(), reverse=True)
             anos_selecionados = st.sidebar.multiselect("Selecione o Ano:", options=anos_disponiveis, default=anos_disponiveis)
@@ -439,7 +448,6 @@ else:
 
             df_filtrado = df.copy()
             
-            # Executa o filtro de busca textual se houver termo digitado (case insensitive)
             if busca_cid_doenca:
                 cond_cid = df_filtrado["Código_CID"].str.contains(busca_cid_doenca, case=False, na=False)
                 cond_nome = df_filtrado["Nome_Doença"].str.contains(busca_cid_doenca, case=False, na=False)
@@ -525,7 +533,7 @@ else:
             st.download_button(
                 label="📥 Exportar Planilha Filtrada para CSV",
                 data=processar_exportacao_csv(df_para_download),
-                file_name=f"HGuJP_atendimentos_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                file_name=f"HGuJP_atendimentos_{obter_hora_brasilia().strftime('%Y%m%d_%H%M%S')}.csv",
                 mime="text/csv",
                 use_container_width=True
             )
