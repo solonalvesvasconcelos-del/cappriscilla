@@ -9,7 +9,7 @@ from datetime import datetime
 
 # 1. CONFIGURAÇÃO DA PÁGINA (OBRIGATORIAMENTE A PRIMEIRA INSTRUÇÃO)
 st.set_page_config(
-    page_title="HGuJP - Dashboard de Atendimentos", 
+    page_title="HGuJP - Sistema de Gestão", 
     page_icon="🏥",
     layout="wide"
 )
@@ -56,7 +56,7 @@ if not os.path.exists(LOG_FILE):
     df_logs_init = pd.DataFrame(columns=["Data_Hora", "Utilizador", "Evento", "Status"])
     df_logs_init.to_csv(LOG_FILE, index=False)
 
-# --- FUNÇÕES DE AUDITORIA ---
+# --- FUNÇÕES DE AUDITORIA E USUÁRIOS ---
 def registar_log(usuario, evento, status):
     """Regista um evento de auditoria no ficheiro CSV."""
     novo_log = {
@@ -68,7 +68,29 @@ def registar_log(usuario, evento, status):
     df_novo = pd.DataFrame([novo_log])
     df_novo.to_csv(LOG_FILE, mode='a', header=not os.path.exists(LOG_FILE), index=False)
 
-# --- INJEÇÃO DE IDENTIDADE VISUAL SEGURO (TEMA DARK HGuJP) ---
+def carregar_usuarios():
+    with open(DB_USERS, "r") as f:
+        return json.load(f)
+
+def salvar_usuario(usuario, senha_pura):
+    usuarios = carregar_usuarios()
+    if usuario in usuarios:
+        return False
+    usuarios[usuario] = {
+        "senha": gerar_senha_segura(senha_pura), 
+        "criado_em": str(datetime.now())
+    }
+    with open(DB_USERS, "w") as f:
+        json.dump(usuarios, f)
+    return True
+
+# --- INICIALIZAÇÃO DO ESTADO DE SESSÃO ---
+if "autenticado" not in st.session_state:
+    st.session_state.autenticado = False
+if "usuario_atual" not in st.session_state:
+    st.session_state.usuario_atual = None
+
+# --- INJEÇÃO DE IDENTIDADE VISUAL (TEMA DARK HGuJP) ---
 estilo_css = """
 <style>
     .stApp { background-color: #0E1117; color: #FAFAFA; }
@@ -87,139 +109,110 @@ estilo_css = """
 """
 st.markdown(estilo_css, unsafe_allow_html=True)
 
-# --- CÓDIGO PRINCIPAL DO DASHBOARD ---
-st.markdown('<h1 class="main-title">HOSPITAL DE GUARNIÇÃO DE JOÃO PESSOA</h1>', unsafe_allow_html=True)
-st.markdown('<p class="sub-title">Diretoria de Saúde — Painel Analítico de Atendimentos Ambulatoriais (HGuJP)</p>', unsafe_allow_html=True)
+# --- TELA DE AUTENTICAÇÃO E CADASTRO ---
+def tela_autenticacao():
+    st.markdown('<div style="text-align: center; margin-top: 20px;">', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-title" style="display: inline-block; text-align: left;">HOSPITAL DE GUARNIÇÃO DE JOÃO PESSOA</h1>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title">Diretoria de Saúde — Controlo de Atendimentos Ambulatoriais (HGuJP)</p>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-def aplicar_layout_dark(fig):
-    fig.update_layout(
-        plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-        font_color='#FAFAFA', title_font_color='#FAFAFA', legend_font_color='#FAFAFA'
-    )
-    fig.update_xaxes(gridcolor='#262730', zerolinecolor='#262730')
-    fig.update_yaxes(gridcolor='#262730', zerolinecolor='#262730')
-    return fig
-
-@st.cache_data
-def load_data():
-    df = pd.read_csv("dados.csv")
-    df['Dia_Atendimento'] = pd.to_datetime(df['Dia_Atendimento'])
-    df['Ano'] = df['Dia_Atendimento'].dt.year
-    df['Ano_Mes'] = df['Dia_Atendimento'].dt.to_period('M').astype(str)
+    aba_login, aba_cadastro = st.tabs(["🔑 Aceder ao Sistema", "➕ Criar Utilizador Novo"])
     
-    # TRATAMENTO DE IDADE: Valores acima de 115 anos viram nulos
-    df['Idade_Tratada'] = pd.to_numeric(df['Idade'], errors='coerce')
-    df.loc[df['Idade_Tratada'] > 115, 'Idade_Tratada'] = None
+    with aba_login:
+        _, col_central, _ = st.columns([1, 1.5, 1])
+        with col_central:
+            with st.form(key="form_login"):
+                st.markdown("<h3 style='color: #64B5F6; margin-top: 0;'>Identificação</h3>", unsafe_allow_html=True)
+                usuario = st.text_input("Identidade Militar / Utilizador:", placeholder="Ex: sgt.solon")
+                senha = st.text_input("Palavra-passe:", type="password", placeholder="******")
+                botao_login = st.form_submit_button("Entrar no Sistema", use_container_width=True)
+                
+                if botao_login:
+                    usuarios = carregar_usuarios()
+                    if usuario in usuarios and verificar_senha_segura(senha, usuarios[usuario]["senha"]):
+                        st.session_state.autenticado = True
+                        st.session_state.usuario_atual = usuario
+                        registar_log(usuario, "Login no Sistema", "Sucesso")
+                        st.success("Autenticação efetuada com sucesso!")
+                        st.rerun()
+                    else:
+                        registar_log(usuario, "Tentativa de Login", "Falha - Credenciais Incorretas")
+                        st.error("Utilizador ou Palavra-passe incorretos. Acesso negado.")
+
+    with aba_cadastro:
+        _, col_central, _ = st.columns([1, 1.5, 1])
+        with col_central:
+            with st.form(key="form_cadastro"):
+                st.markdown("<h3 style='color: #4CAF50; margin-top: 0;'>Registar Novo Operador</h3>", unsafe_allow_html=True)
+                novo_usuario = st.text_input("Definir Nome de Utilizador:", placeholder="Ex: ten.silva")
+                nova_senha = st.text_input("Definir Palavra-passe:", type="password", placeholder="Mínimo 6 caracteres")
+                confirmar_senha = st.text_input("Confirmar Palavra-passe:", type="password")
+                botao_cadastrar = st.form_submit_button("Criar Conta", use_container_width=True)
+                
+                if botao_cadastrar:
+                    if len(novo_usuario) < 3 or len(nova_senha) < 6:
+                        st.error("O utilizador deve ter 3+ caracteres e a senha 6+ caracteres.")
+                    elif nova_senha != confirmar_senha:
+                        st.error("As palavras-passe não coincidem.")
+                    else:
+                        if salvar_usuario(novo_usuario, nova_senha):
+                            operador = st.session_state.usuario_atual if st.session_state.usuario_atual else "Cadastro Inicial"
+                            registar_log(operador, f"Criou utilizador: {novo_usuario}", "Sucesso")
+                            st.success(f"Utilizador '{novo_usuario}' criado com sucesso! Use a aba ao lado para entrar.")
+                        else:
+                            st.error("Este nome de utilizador já se encontra registado no sistema.")
+
+# --- CONTROLO DE FLUXO PRINCIPAL ---
+if not st.session_state.autenticado:
+    tela_autenticacao()
+else:
+    # --- BARRA LATERAL ADMINISTRATIVA ---
+    if st.sidebar.button("🔒 Terminar Sessão (Logout)", use_container_width=True):
+        registar_log(st.session_state.usuario_atual, "Logout do Sistema", "Sucesso")
+        st.session_state.autenticado = False
+        st.session_state.usuario_atual = None
+        st.rerun()
+
+    st.sidebar.markdown(f"👤 Operador: **{st.session_state.usuario_atual}**")
+    st.sidebar.markdown("<div class='custom-hr'></div>", unsafe_allow_html=True)
     
-    # Criar mapeamento de faixas etárias de 10 em 10 anos
-    bins = list(range(0, 121, 10))
-    labels = [f"{i}-{i+9}" for i in bins[:-1]]
-    df['Faixa_Etaria'] = pd.cut(df['Idade_Tratada'], bins=bins, labels=labels, right=False)
-    df['Faixa_Etaria'] = df['Faixa_Etaria'].astype(str).replace('nan', 'Não Informada')
-    return df
+    modo_visao = st.sidebar.radio("Navegação do Sistema:", ["📊 Dashboard Ambulatorial", "📜 Logs de Auditoria"])
 
-try:
-    df = load_data()
+    # --- VISÃO 1: DASHBOARD DE SAÚDE ---
+    if modo_visao == "📊 Dashboard Ambulatorial":
+        st.markdown('<h1 class="main-title">HOSPITAL DE GUARNIÇÃO DE JOÃO PESSOA</h1>', unsafe_allow_html=True)
+        st.markdown('<p class="sub-title">Diretoria de Saúde — Painel Analítico de Atendimentos Ambulatoriais (HGuJP)</p>', unsafe_allow_html=True)
 
-    # --- BARRA LATERAL (FILTROS) ---
-    st.sidebar.markdown("<h3 style='color: #64B5F6;'>Filtros de Pesquisa</h3>", unsafe_allow_html=True)
-    
-    anos_disponiveis = sorted(df["Ano"].unique(), reverse=True)
-    anos_selecionados = st.sidebar.multiselect("Selecione o Ano:", options=anos_disponiveis, default=anos_disponiveis)
-    
-    idade_min, idade_max = 0, 115
-    idade_selecionada = st.sidebar.slider("Intervalo de Idade Válida:", min_value=idade_min, max_value=idade_max, value=(idade_min, idade_max))
-    
-    setores_disponiveis = sorted(df["Setor_Atendimento"].dropna().unique())
-    setores_selecionados = st.sidebar.multiselect("Selecione o Setor:", options=setores_disponiveis, default=setores_disponiveis)
-    
-    especialidades_disponiveis = sorted(df["Especialidade_Atendimento"].unique())
-    especialidades_selecionadas = st.sidebar.multiselect("Selecione a Especialidade:", options=especialidades_disponiveis, default=especialidades_disponiveis)
-    
-    sexo_selecionado = st.sidebar.multiselect("Selecione o Sexo:", options=df["Sexo"].unique(), default=df["Sexo"].unique())
+        def aplicar_layout_dark(fig):
+            fig.update_layout(
+                plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                font_color='#FAFAFA', title_font_color='#FAFAFA', legend_font_color='#FAFAFA'
+            )
+            fig.update_xaxes(gridcolor='#262730', zerolinecolor='#262730')
+            fig.update_yaxes(gridcolor='#262730', zerolinecolor='#262730')
+            return fig
 
-    # --- PROCESSAMENTO DOS FILTROS SEQUENCIAIS ---
-    df_filtrado = df.copy()
-    
-    if anos_selecionados:
-        df_filtrado = df_filtrado[df_filtrado["Ano"].isin(anos_selecionados)]
-        
-    if setores_selecionados:
-        df_filtrado = df_filtrado[df_filtrado["Setor_Atendimento"].isin(setores_selecionados)]
-        
-    if especialidades_selecionadas:
-        df_filtrado = df_filtrado[df_filtrado["Especialidade_Atendimento"].isin(especialidades_selecionadas)]
-        
-    if sexo_selecionado:
-        df_filtrado = df_filtrado[df_filtrado["Sexo"].isin(sexo_selecionado)]
-        
-    # Filtro do intervalo do Slider de Idade (Mantém válidos dentro do range ou nulos/inválidos)
-    condicao_idade_valida = df_filtrado["Idade_Tratada"].between(idade_selecionada[0], idade_selecionada[1])
-    condicao_idade_nula = df_filtrado["Idade_Tratada"].isna()
-    df_filtrado = df_filtrado[condicao_idade_valida | condicao_idade_nula]
+        @st.cache_data
+        def load_data():
+            df = pd.read_csv("dados.csv")
+            df['Dia_Atendimento'] = pd.to_datetime(df['Dia_Atendimento'])
+            df['Ref_Ano'] = df['Dia_Atendimento'].dt.year
+            df['Ano_Mes'] = df['Dia_Atendimento'].dt.to_period('M').astype(str)
+            df['Idade_Tratada'] = pd.to_numeric(df['Idade'], errors='coerce')
+            df.loc[df['Idade_Tratada'] > 115, 'Idade_Tratada'] = None
+            
+            bins = list(range(0, 121, 10))
+            labels = [f"{i}-{i+9}" for i in bins[:-1]]
+            df['Faixa_Etaria'] = pd.cut(df['Idade_Tratada'], bins=bins, labels=labels, right=False)
+            df['Faixa_Etaria'] = df['Faixa_Etaria'].astype(str).replace('nan', 'Não Informada')
+            return df
 
-    # --- MÉTRICAS ---
-    col1, col2, col3 = st.columns(3)
-    col1.metric("📋 Total de Atendimentos", f"{len(df_filtrado)}")
-    idades_validas = df_filtrado['Idade_Tratada'].dropna()
-    col2.metric("🩺 Média de Idade (Válidas)", f"{idades_validas.mean():.1f} anos" if len(idades_validas) > 0 else "N/A")
-    col3.metric("🔬 CIDs Únicos Identificados", f"{df_filtrado['Código_CID'].nunique()}")
+        try:
+            df = load_data()
 
-    st.markdown('<div class="custom-hr"></div>', unsafe_allow_html=True)
-
-    # --- GRÁFICOS ---
-    row1_col1, row1_col2 = st.columns(2)
-
-    with row1_col1:
-        st.subheader("📈 Linha do Tempo de Atendimentos (Por Mês)")
-        if len(df_filtrado) > 0:
-            df_mes = df_filtrado.groupby('Ano_Mes').size().reset_index(name='Atendimentos').sort_values('Ano_Mes')
-            fig_linha = px.bar(df_mes, x='Ano_Mes', y='Atendimentos', labels={'Ano_Mes': 'Mês/Ano', 'Atendimentos': 'Atendimentos'}, color_discrete_sequence=['#1E88E5'])
-            fig_linha = aplicar_layout_dark(fig_linha)
-            st.plotly_chart(fig_linha, use_container_width=True)
-        else:
-            st.info("Nenhum dado encontrado.")
-
-    with row1_col2:
-        st.subheader("👥 Distribuição por Sexo Biológico")
-        if len(df_filtrado) > 0:
-            fig_pizza = px.pie(df_filtrado, names='Sexo', hole=0.4, color_discrete_sequence=['#1E88E5', '#4CAF50'])
-            fig_pizza = aplicar_layout_dark(fig_pizza)
-            st.plotly_chart(fig_pizza, use_container_width=True)
-        else:
-            st.info("Nenhum dado encontrado.")
-
-    row2_col1, row2_col2 = st.columns(2)
-
-    with row2_col1:
-        st.subheader("📊 Distribuição por Faixa Etária (Grupos de 10 Anos)")
-        if len(df_filtrado) > 0:
-            df_idade = df_filtrado.groupby('Faixa_Etaria', observed=False).size().reset_index(name='Quantidade')
-            df_idade['Faixa_Etaria'] = pd.Categorical(df_idade['Faixa_Etaria'], categories=[f"{i}-{i+9}" for i in range(0, 120, 10)] + ['Não Informada'], ordered=True)
-            df_idade = df_idade.sort_values('Faixa_Etaria')
-            fig_idade = px.bar(df_idade, x='Faixa_Etaria', y='Quantidade', labels={'Faixa_Etaria': 'Grupo de Idade', 'Quantidade': 'Pacientes'}, color='Quantidade', color_continuous_scale='YlGnBu')
-            fig_idade = aplicar_layout_dark(fig_idade)
-            st.plotly_chart(fig_idade, use_container_width=True)
-        else:
-            st.info("Nenhum dado encontrado.")
-
-    with row2_col2:
-        st.subheader("📋 Top 10 Patologias Mais Frequentes (Código CID)")
-        if len(df_filtrado) > 0:
-            df_cid = df_filtrado.groupby(['Código_CID', 'Nome_Doença']).size().reset_index(name='Total').sort_values(by='Total', ascending=False).head(10)
-            fig_cid = px.bar(df_cid, x='Total', y='Código_CID', orientation='h', text='Nome_Doença', labels={'Código_CID': 'Código CID', 'Total': 'Casos'}, color='Total', color_continuous_scale='Blues')
-            fig_cid.update_layout(yaxis={'categoryorder':'total ascending'})
-            fig_cid = aplicar_layout_dark(fig_cid)
-            st.plotly_chart(fig_cid, use_container_width=True)
-        else:
-            st.info("Nenhum dado encontrado.")
-
-    # --- TABELA DE DADOS ---
-    st.markdown('<div class="custom-hr"></div>', unsafe_allow_html=True)
-    st.subheader("🗃️ Registro de Dados Filtrados")
-    df_exibicao = df_filtrado.copy()
-    df_exibicao['Idade_Exibição'] = df_exibicao['Idade_Tratada'].apply(lambda x: f"{int(x)}" if pd.notna(x) else "Inválida (>115)")
-    st.dataframe(df_exibicao[['Idade_Exibição', 'Faixa_Etaria', 'Sexo', 'Dia_Atendimento', 'Código_CID', 'Nome_Doença', 'Especialidade_Atendimento', 'Setor_Atendimento']], use_container_width=True)
-
-except Exception as e:
-    st.error(f"Erro ao processar os dados. Detalhes: {e}")
+            st.sidebar.markdown("<h3 style='color: #64B5F6;'>Filtros de Pesquisa</h3>", unsafe_allow_html=True)
+            anos_disponiveis = sorted(df["Ref_Ano"].unique(), reverse=True)
+            anos_selecionados = st.sidebar.multiselect("Selecione o Ano:", options=anos_disponiveis, default=anos_disponiveis)
+            
+            idade_min, idade_max = 0, 115
+            idade_selecionada = st.sidebar.slider("Intervalo de
