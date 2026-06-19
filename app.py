@@ -79,7 +79,7 @@ def tela_login():
         with st.form(key="formulario_login"):
             st.markdown("<h3 style='color: #64B5F6; margin-top: 0;'>Autenticação de Utilizador</h3>", unsafe_allow_html=True)
             
-            usuario = st.text_input("Identidade Militar / Utilizador:", placeholder="Ex: sgt.solon")
+            usuario = st.text_input("Identidade Militar / Utilizador:", placeholder="Ex: sgtfulano")
             senha = st.text_input("Palavra-passe:", type="password", placeholder="******")
             
             botao_submeter = st.form_submit_button("Entrar no Sistema")
