@@ -47,21 +47,29 @@ def verificar_senha_segura(senha_pura, senha_armazenada):
 
 # --- INICIALIZAÇÃO DE BANCO DE DADOS E LOGS ---
 if not os.path.exists(DB_USERS):
+    # O admin mestre é criado nativamente com o perfil "admin"
     admin_senha_cripto = gerar_senha_segura("hgujp2026")
-    dados_iniciais = {"admin": {"senha": admin_senha_cripto, "criado_em": str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))}}
+    dados_iniciais = {
+        "admin": {
+            "senha": admin_senha_cripto, 
+            "perfil": "admin",
+            "criado_em": str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        }
+    }
     with open(DB_USERS, "w") as f:
         json.dump(dados_iniciais, f)
 
 if not os.path.exists(LOG_FILE):
-    df_logs_init = pd.DataFrame(columns=["Data_Hora", "Utilizador", "Evento", "Status"])
+    df_logs_init = pd.DataFrame(columns=["Data_Hora", "Utilizador", "Perfil", "Evento", "Status"])
     df_logs_init.to_csv(LOG_FILE, index=False)
 
 # --- FUNÇÕES DE AUDITORIA E USUÁRIOS ---
-def registar_log(usuario, evento, status):
-    """Regista um evento de auditoria no ficheiro CSV."""
+def registar_log(usuario, perfil, evento, status):
+    """Regista um evento de auditoria detalhado no ficheiro CSV."""
     novo_log = {
         "Data_Hora": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "Utilizador": usuario if usuario else "ANÓNIMO",
+        "Perfil": perfil if perfil else "N/A",
         "Evento": evento,
         "Status": status
     }
@@ -72,12 +80,13 @@ def carregar_usuarios():
     with open(DB_USERS, "r") as f:
         return json.load(f)
 
-def salvar_usuario(usuario, senha_pura):
+def salvar_usuario(usuario, senha_pura, perfil_selecionado):
     usuarios = carregar_usuarios()
     if usuario in usuarios:
         return False
     usuarios[usuario] = {
         "senha": gerar_senha_segura(senha_pura), 
+        "perfil": perfil_selecionado,
         "criado_em": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
     with open(DB_USERS, "w") as f:
@@ -89,6 +98,10 @@ if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
 if "usuario_atual" not in st.session_state:
     st.session_state.usuario_atual = None
+if "perfil_atual" not in st.session_state:
+    st.session_state.perfil_atual = None
+if "ultimo_filtro" not in st.session_state:
+    st.session_state.ultimo_filtro = {}
 
 # --- INJEÇÃO DE IDENTIDADE VISUAL (TEMA DARK HGuJP) ---
 estilo_css = """
@@ -110,25 +123,24 @@ estilo_css = """
 st.markdown(estilo_css, unsafe_allow_html=True)
 
 
-# --- PAINEL EXCLUSIVO: GERENCIAR OPERADORES (APENAS ADMIN) ---
+# --- PAINEL EXCLUSIVO: GERENCIAR OPERADORES (APENAS PROFILE ADMIN) ---
 def componente_gerenciar_operadores():
-    """Exibe a lista de operadores ativos e permite criar novos."""
     st.markdown('<h1 class="main-title">GERENCIAMENTO DE OPERADORES</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="sub-title">HGuJP — Controle de Credenciais e Controle de Acessos</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title">HGuJP — Controle de Credenciais, Níveis de Acesso e Perfis</p>', unsafe_allow_html=True)
     
-    if not (st.session_state.autenticado and st.session_state.usuario_atual == "admin"):
-        st.warning("⚠️ Permissão Negada. A criação e listagem de operadores é restrita ao administrador.")
+    if st.session_state.perfil_atual != "admin":
+        st.warning("⚠️ Permissão Negada. Painel restrito ao perfil Administrador.")
         return
 
     # 1. LISTA DE OPERADORES EXISTENTES
     st.subheader("👥 Operadores Cadastrados no Sistema")
     try:
         usuarios_cadastrados = carregar_usuarios()
-        
         lista_dados = []
         for nome_user, info in usuarios_cadastrados.items():
             lista_dados.append({
                 "Nome de Utilizador": nome_user,
+                "Perfil de Acesso": info.get("perfil", "viewer").upper(),
                 "Data de Criação": info.get("criado_em", "N/A")
             })
         
@@ -139,13 +151,14 @@ def componente_gerenciar_operadores():
 
     st.markdown('<div class="custom-hr"></div>', unsafe_allow_html=True)
 
-    # 2. EXPANDER PARA ADICIONAR OPERADOR
+    # 2. EXPANDER PARA ADICIONAR OPERADOR COM PERFIL
     with st.expander("➕ Cadastrar Novo Operador / Utilizador"):
         _, col_central, _ = st.columns([1, 1.5, 1])
         with col_central:
             with st.form(key="form_cadastro_operador", clear_on_submit=True):
                 st.markdown("<h4 style='color: #4CAF50; margin-top: 0;'>Dados do Novo Operador</h4>", unsafe_allow_html=True)
                 novo_usuario = st.text_input("Nome de Utilizador:", placeholder="Ex: ten.silva")
+                perfil_novo = st.selectbox("Perfil de Acesso:", ["viewer", "admin"], help="Admin: Acesso total | Viewer: Apenas relatórios")
                 nova_senha = st.text_input("Definir Palavra-passe:", type="password", placeholder="Mínimo 6 caracteres")
                 confirmar_senha = st.text_input("Confirmar Palavra-passe:", type="password")
                 botao_cadastrar = st.form_submit_button("Confirmar e Salvar Conta", use_container_width=True)
@@ -156,9 +169,9 @@ def componente_gerenciar_operadores():
                     elif nova_senha != confirmar_senha:
                         st.error("As palavras-passe inseridas não coincidem.")
                     else:
-                        if salvar_usuario(novo_usuario, nova_senha):
-                            registar_log("admin", f"Criou utilizador: {novo_usuario}", "Sucesso")
-                            st.success(f"Utilizador '{novo_usuario}' registrado com sucesso!")
+                        if salvar_usuario(novo_usuario, nova_senha, perfil_novo):
+                            registar_log(st.session_state.usuario_atual, st.session_state.perfil_atual, f"Criou utilizador '{novo_usuario}' com perfil '{perfil_novo}'", "Sucesso")
+                            st.success(f"Utilizador '{novo_usuario}' registrado como {perfil_novo.upper()} com sucesso!")
                             st.rerun()
                         else:
                             st.error("Este nome de utilizador já se encontra registado no sistema.")
@@ -182,13 +195,16 @@ def tela_autenticacao():
             if botao_login:
                 usuarios = carregar_usuarios()
                 if usuario in usuarios and verificar_senha_segura(senha, usuarios[usuario]["senha"]):
+                    perfil_detectado = usuarios[usuario].get("perfil", "viewer")
                     st.session_state.autenticado = True
                     st.session_state.usuario_atual = usuario
-                    registar_log(usuario, "Login no Sistema", "Sucesso")
+                    st.session_state.perfil_atual = perfil_detectado
+                    
+                    registar_log(usuario, perfil_detectado, "Login no Sistema", "Sucesso")
                     st.success("Autenticação efetuada!")
                     st.rerun()
                 else:
-                    registar_log(usuario, "Tentativa de Login", "Falha - Credenciais Incorretas")
+                    registar_log(usuario, "N/A", "Tentativa de Login", "Falha - Credenciais Incorretas")
                     st.error("Utilizador ou Palavra-passe incorretos. Acesso negado.")
 
 
@@ -198,19 +214,18 @@ if not st.session_state.autenticado:
 else:
     # --- BARRA LATERAL ADMINISTRATIVA ---
     if st.sidebar.button("🔒 Terminar Sessão (Logout)", use_container_width=True):
-        registar_log(st.session_state.usuario_atual, "Logout do Sistema", "Sucesso")
+        registar_log(st.session_state.usuario_atual, st.session_state.perfil_atual, "Logout (Logof) do Sistema", "Sucesso")
         st.session_state.autenticado = False
         st.session_state.usuario_atual = None
+        st.session_state.perfil_atual = None
         st.rerun()
 
-    st.sidebar.markdown(f"👤 Operador: **{st.session_state.usuario_atual}**")
+    st.sidebar.markdown(f"👤 Operador: **{st.session_state.usuario_atual}** ({st.session_state.perfil_atual.upper()})")
     st.sidebar.markdown("<div class='custom-hr'></div>", unsafe_allow_html=True)
     
-    # CONSTRUÇÃO DINÂMICA DO MENU COM BASE NO PERFIL
+    # CONSTRUÇÃO DINÂMICA DO MENU BASEADO NO PERFIL DE ACESSO
     opcoes_navegacao = ["📊 Dashboard Ambulatorial"]
-    
-    # Restrição absoluta: Logs e Gerenciamento aparecem apenas para o admin
-    if st.session_state.usuario_atual == "admin":
+    if st.session_state.perfil_atual == "admin":
         opcoes_navegacao.append("📜 Logs de Auditoria")
         opcoes_navegacao.append("➕ Gerenciar Operadores")
         
@@ -249,6 +264,8 @@ else:
             df = load_data()
 
             st.sidebar.markdown("<h3 style='color: #64B5F6;'>Filtros de Pesquisa</h3>", unsafe_allow_html=True)
+            
+            # --- MONITORIZAÇÃO ATIVA DE FILTROS ---
             anos_disponiveis = sorted(df["Ref_Ano"].unique(), reverse=True)
             anos_selecionados = st.sidebar.multiselect("Selecione o Ano:", options=anos_disponiveis, default=anos_disponiveis)
             
@@ -263,6 +280,16 @@ else:
             
             sexo_selecionado = st.sidebar.multiselect("Selecione o Sexo:", options=df["Sexo"].unique(), default=df["Sexo"].unique())
 
+            # Logica de comparação para detectar modificações em filtros
+            estado_filtros_atual = {
+                "anos": anos_selecionados, "idade": idade_selecionada, 
+                "setores": setores_selecionados, "especialidades": especialidades_selecionadas, "sexo": sexo_selecionado
+            }
+            if st.session_state.ultimo_filtro and st.session_state.ultimo_filtro != estado_filtros_atual:
+                registar_log(st.session_state.usuario_atual, st.session_state.perfil_atual, "Alterou Filtros do Dashboard", "Sucesso")
+            st.session_state.ultimo_filtro = estado_filtros_atual
+
+            # Filtros Sequenciais
             df_filtrado = df.copy()
             if anos_selecionados:
                 df_filtrado = df_filtrado[df_filtrado["Ref_Ano"].isin(anos_selecionados)]
@@ -277,16 +304,26 @@ else:
             cond_nula = df_filtrado["Idade_Tratada"].isna()
             df_filtrado = df_filtrado[cond_valida | cond_nula]
 
-            # --- MÉTRICAS ---
+            # --- MONITORIZAÇÃO DE CLIQUES EM ELEMENTOS ESPECÍFICOS ---
             col1, col2, col3 = st.columns(3)
-            col1.metric("📋 Total de Atendimentos", f"{len(df_filtrado)}")
+            
+            # Botões para monitorar intenção de visualização detalhada de métricas
+            if col1.button("📊 Ver Detalhes: Total de Atendimentos", use_container_width=True):
+                registar_log(st.session_state.usuario_atual, st.session_state.perfil_atual, "Clicou: Detalhes Total Atendimentos", "Sucesso")
+            col1.metric("Total de Atendimentos", f"{len(df_filtrado)}")
+            
+            if col2.button("🩺 Ver Detalhes: Média de Idades", use_container_width=True):
+                registar_log(st.session_state.usuario_atual, st.session_state.perfil_atual, "Clicou: Detalhes Média Idades", "Sucesso")
             idades_validas = df_filtrado['Idade_Tratada'].dropna()
-            col2.metric("🩺 Média de Idade (Válidas)", f"{idades_validas.mean():.1f} anos" if len(idades_validas) > 0 else "N/A")
-            col3.metric("🔬 CIDs Únicos Identificados", f"{df_filtrado['Código_CID'].nunique()}")
+            col2.metric("Média de Idade (Válidas)", f"{idades_validas.mean():.1f} anos" if len(idades_validas) > 0 else "N/A")
+            
+            if col3.button("🔬 Ver Detalhes: CIDs Únicos", use_container_width=True):
+                registar_log(st.session_state.usuario_atual, st.session_state.perfil_atual, "Clicou: Detalhes CIDs Identificados", "Sucesso")
+            col3.metric("CIDs Únicos Identificados", f"{df_filtrado['Código_CID'].nunique()}")
 
             st.markdown('<div class="custom-hr"></div>', unsafe_allow_html=True)
 
-            # --- GRÁFICOS ---
+            # --- GRÁFICOS INTERATIVOS ---
             row1_col1, row1_col2 = st.columns(2)
 
             with row1_col1:
@@ -333,8 +370,14 @@ else:
                 else:
                     st.info("Nenhum dado encontrado.")
 
+            # --- TABELA E EXPORTAÇÃO SEGURO ---
             st.markdown('<div class="custom-hr"></div>', unsafe_allow_html=True)
             st.subheader("🗃️ Registro de Dados Filtrados")
+            
+            # Botão de Exportação monitorizado
+            if st.button("📥 Exportar Planilha Filtrada para CSV", use_container_width=True):
+                registar_log(st.session_state.usuario_atual, st.session_state.perfil_atual, "Exportou Dados Ambulatoriais (CSV)", "Sucesso")
+                
             df_exibicao = df_filtrado.copy()
             df_exibicao['Idade_Exibição'] = df_exibicao['Idade_Tratada'].apply(lambda x: f"{int(x)}" if pd.notna(x) else "Inválida (>115)")
             st.dataframe(df_exibicao[['Idade_Exibição', 'Faixa_Etaria', 'Sexo', 'Dia_Atendimento', 'Código_CID', 'Nome_Doença', 'Especialidade_Atendimento', 'Setor_Atendimento']], use_container_width=True)
@@ -342,10 +385,10 @@ else:
         except Exception as e:
             st.error(f"Erro ao processar os dados. Detalhes: {e}")
 
-    # --- VISÃO 2: LOGS DE AUDITORIA (EXCLUSIVO ADMIN) ---
-    elif modo_visao == "📜 Logs de Auditoria" and st.session_state.usuario_atual == "admin":
+# --- VISÃO 2: LOGS DE AUDITORIA (RESTRITO AO ADMIN) ---
+    elif modo_visao == "📜 Logs de Auditoria" and st.session_state.perfil_atual == "admin":
         st.markdown('<h1 class="main-title">LOGS DE AUDITORIA DO SISTEMA</h1>', unsafe_allow_html=True)
-        st.markdown('<p class="sub-title">HGuJP — Histórico de Acessos e Ações de Utilizadores</p>', unsafe_allow_html=True)
+        st.markdown('<p class="sub-title">HGuJP — Histórico de Acessos, Cliques, Filtros e Ações de Utilizadores</p>', unsafe_allow_html=True)
         
         try:
             df_logs = pd.read_csv(LOG_FILE)
@@ -359,15 +402,15 @@ else:
             st.dataframe(df_logs, use_container_width=True)
             
             if st.button("🚨 Limpar Histórico de Logs", use_container_width=True):
-                df_vazio = pd.DataFrame(columns=["Data_Hora", "Utilizador", "Evento", "Status"])
+                df_vazio = pd.DataFrame(columns=["Data_Hora", "Utilizador", "Perfil", "Evento", "Status"])
                 df_vazio.to_csv(LOG_FILE, index=False)
-                registar_log("admin", "Limpeza de Logs de Auditoria", "Sucesso")
+                registar_log("admin", "admin", "Limpeza de Logs de Auditoria", "Sucesso")
                 st.success("Histórico limpo!")
                 st.rerun()
                     
         except Exception as e:
             st.error(f"Erro ao ler o ficheiro de auditoria: {e}")
 
-    # --- VISÃO 3: GERENCIAR OPERADORES (EXCLUSIVO ADMIN) ---
-    elif modo_visao == "➕ Gerenciar Operadores" and st.session_state.usuario_atual == "admin":
+    # --- VISÃO 3: GERENCIAR OPERADORES (RESTRITO AO ADMIN) ---
+    elif modo_visao == "➕ Gerenciar Operadores" and st.session_state.perfil_atual == "admin":
         componente_gerenciar_operadores()
