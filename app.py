@@ -17,6 +17,7 @@ st.set_page_config(
 # --- CONFIGURAÇÃO DE FICHEIROS DE SISTEMA ---
 DB_USERS = "usuarios_db.json"
 LOG_FILE = "sistema_logs.csv"
+MAX_TENTATIVAS = 3  # Limite para bloqueio de segurança
 
 # --- FUNÇÕES AVANÇADAS DE CRIPTOGRAFIA (SALT + PBKDF2) ---
 def gerar_senha_segura(senha_pura):
@@ -31,7 +32,7 @@ def gerar_senha_segura(senha_pura):
     return salt.hex() + ":" + senha_hash.hex()
 
 def verificar_senha_segura(senha_pura, senha_armazenada):
-    """Extrai o salt e valida se a senha digitada bate com o registro de forma segura."""
+    """Extrai o salt e valida se a senha digitada bate com o registro."""
     try:
         salt_hex, hash_original_hex = senha_armazenada.split(":")
         salt = bytes.fromhex(salt_hex)
@@ -54,7 +55,7 @@ def salvar_banco_usuarios(dados_usuarios):
     with open(DB_USERS, "w") as f:
         json.dump(dados_usuarios, f)
 
-# --- INICIALIZAÇÃO DE BANCO DE DADOS, LOGS E CONVERSÃO EM LOTE ---
+# --- INICIALIZAÇÃO DO BANCO DE DADOS E ESTRUTURAS ---
 if not os.path.exists(DB_USERS):
     admin_senha_cripto = gerar_senha_segura("hgujp2026")
     agora = datetime.now()
@@ -64,6 +65,7 @@ if not os.path.exists(DB_USERS):
             "senha": admin_senha_cripto, 
             "perfil": "admin",
             "ativo": True,
+            "tentativas_falhas": 0,
             "criado_em": agora.strftime("%Y-%m-%d %H:%M:%S"),
             "validade_ate": validade.strftime("%Y-%m-%d %H:%M:%S")
         }
@@ -76,18 +78,11 @@ else:
         agora = datetime.now()
         
         for usuario, info in usuarios_atuais.items():
-            if info.get("perfil") != "admin":
-                usuarios_atuais[usuario]["perfil"] = "admin"
+            if "tentativas_falhas" not in info:
+                usuarios_atuais[usuario]["tentativas_falhas"] = 0
                 alteracao_detectada = True
             if "ativo" not in info:
                 usuarios_atuais[usuario]["ativo"] = True
-                alteracao_detectada = True
-            if "validade_ate" not in info:
-                try:
-                    criado_em = datetime.strptime(info.get("criado_em", agora.strftime("%Y-%m-%d %H:%M:%S")), "%Y-%m-%d %H:%M:%S")
-                except:
-                    criado_em = agora
-                usuarios_atuais[usuario]["validade_ate"] = (criado_em + timedelta(days=365)).strftime("%Y-%m-%d %H:%M:%S")
                 alteracao_detectada = True
         
         if alteracao_detectada:
@@ -122,13 +117,13 @@ def salvar_usuario(usuario, senha_pura, perfil_selecionado, ativo_selecionado):
         "senha": gerar_senha_segura(senha_pura), 
         "perfil": perfil_selecionado,
         "ativo": ativo_selecionado,
+        "tentativas_falhas": 0,
         "criado_em": agora.strftime("%Y-%m-%d %H:%M:%S"),
         "validade_ate": validade.strftime("%Y-%m-%d %H:%M:%S")
     }
     salvar_banco_usuarios(usuarios)
     return True
 
-# --- FUNÇÃO AUXILIAR DE EXPORTAÇÃO (CONVERTE E LOGA) ---
 def processar_exportacao_csv(dataframe_alvo):
     """Gera a string CSV dos dados filtrados e armazena a ação no arquivo de auditoria."""
     registar_log(
@@ -137,7 +132,6 @@ def processar_exportacao_csv(dataframe_alvo):
         "Exportou Dados Ambulatoriais (CSV)", 
         "Sucesso"
     )
-    # Converte o dataframe para CSV no formato UTF-8 string pronto para download
     return dataframe_alvo.to_csv(index=False).encode('utf-8')
 
 # --- INICIALIZAÇÃO DO ESTADO DE SESSÃO ---
@@ -201,7 +195,11 @@ def componente_gerenciar_operadores():
             c_perf.write(str(info.get("perfil", "viewer")).upper())
             
             is_ativo = info.get("ativo", True)
-            c_status.write("🟢 Ativo" if is_ativo else "🔴 Inativo")
+            falhas = info.get("tentativas_falhas", 0)
+            status_txt = "🟢 Ativo" if is_ativo else "🔴 Inativo"
+            if falhas >= MAX_TENTATIVAS:
+                status_txt = "🔒 Bloqueado (Força Bruta)"
+            c_status.write(status_txt)
             
             c_criacao.write(str(info.get("criado_em", "N/A")))
             c_validade.write(str(info.get("validade_ate", "N/A")))
@@ -224,6 +222,7 @@ def componente_gerenciar_operadores():
             with col_e1:
                 perfil_edit = st.selectbox("Alterar Perfil:", ["admin", "viewer"], index=0 if info_u.get("perfil") == "admin" else 1)
                 ativo_edit = st.checkbox("Conta Ativa", value=info_u.get("ativo", True))
+                desbloquear = st.checkbox("Zerar tentativas de login incorretas (Desbloquear)", value=False)
             with col_e2:
                 nova_senha_edit = st.text_input("Nova Palavra-passe (Em branco mantém atual):", type="password")
                 data_val_atual = datetime.strptime(info_u.get("validade_ate"), "%Y-%m-%d %H:%M:%S")
@@ -236,6 +235,9 @@ def componente_gerenciar_operadores():
                 usuarios_atualizados[u_edit]["ativo"] = ativo_edit
                 usuarios_atualizados[u_edit]["validade_ate"] = f"{validade_edit_dt} 23:59:59"
                 
+                if desbloquear:
+                    usuarios_atualizados[u_edit]["tentativas_falhas"] = 0
+                
                 if len(nova_senha_edit.strip()) >= 6:
                     usuarios_atualizados[u_edit]["senha"] = gerar_senha_segura(nova_senha_edit)
                     log_msg = f"Modificou dados e senha do usuário '{u_edit}'"
@@ -247,7 +249,7 @@ def componente_gerenciar_operadores():
                 
                 salvar_banco_usuarios(usuarios_atualizados)
                 registar_log(st.session_state.usuario_atual, st.session_state.perfil_atual, log_msg, "Sucesso")
-                st.success(f"Dados do operador '{u_edit}' updated!")
+                st.success(f"Dados do operador '{u_edit}' atualizados!")
                 st.session_state.usuario_em_edicao = None
                 st.rerun()
                 
@@ -285,10 +287,10 @@ def componente_gerenciar_operadores():
 
 # --- TELA DE AUTENTICAÇÃO INICIAL ---
 def tela_autenticacao():
-   # st.markdown('<div style="text-align: center; margin-top: 50px;">', unsafe_allow_html=True)
-    #st.markdown('<h1 class="main-title" style="display: inline-block; text-align: left;">HOSPITAL DE GUARNIÇÃO DE JOÃO PESSOA</h1>', unsafe_allow_html=True)
-    #st.markdown('<p class="sub-title">Diretoria de Saúde — Controlo de Atendimentos Ambulatoriais (HGuJP)</p>', unsafe_allow_html=True)
-    #st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('<div style="text-align: center; margin-top: 50px;">', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-title" style="display: inline-block; text-align: left;">HOSPITAL DE GUARNIÇÃO DE JOÃO PESSOA</h1>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title">Diretoria de Saúde — Controlo de Atendimentos Ambulatoriais (HGuJP)</p>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
     _, col_central, _ = st.columns([1, 1.3, 1])
     with col_central:
@@ -300,32 +302,54 @@ def tela_autenticacao():
             
             if botao_login:
                 usuarios = carregar_usuarios()
-                if usuario in usuarios and verificar_senha_segura(senha, usuarios[usuario]["senha"]):
+                if usuario in usuarios:
                     info_user = usuarios[usuario]
                     
-                    if not info_user.get("ativo", True):
-                        registar_log(usuario, info_user.get("perfil", "N/A"), "Tentativa de Login", "Bloqueado - Usuário Inativo")
-                        st.error("⚠️ Esta conta foi desativada pelo administrador.")
+                    # Verifica se o operador já está bloqueado
+                    if not info_user.get("ativo", True) or info_user.get("tentativas_falhas", 0) >= MAX_TENTATIVAS:
+                        registar_log(usuario, info_user.get("perfil", "N/A"), "Tentativa de Login", "Bloqueado - Conta Inativa ou Bloqueada")
+                        st.error("⚠️ Esta conta está inativa ou bloqueada por tentativas excessivas de login. Contate o Administrador.")
                         st.stop()
-                    
-                    data_validade_str = info_user.get("validade_ate")
-                    if data_validade_str:
-                        data_validade = datetime.strptime(data_validade_str, "%Y-%m-%d %H:%M:%S")
-                        if datetime.now() > data_validade:
-                            registar_log(usuario, info_user.get("perfil", "N/A"), "Tentativa de Login", "Bloqueado - Validade Expirada")
-                            st.error("❌ A validade desta credencial expirou.")
-                            st.stop()
-                    
-                    perfil_detectado = info_user.get("perfil", "viewer")
-                    st.session_state.autenticado = True
-                    st.session_state.usuario_atual = usuario
-                    st.session_state.perfil_atual = perfil_detectado
-                    
-                    registar_log(usuario, perfil_detectado, "Login no Sistema", "Sucesso")
-                    st.success("Autenticação efetuada!")
-                    st.rerun()
+                        
+                    if verificar_senha_segura(senha, info_user["senha"]):
+                        # Reseta o contador de falhas em caso de sucesso
+                        info_user["tentativas_falhas"] = 0
+                        usuarios[usuario] = info_user
+                        salvar_banco_usuarios(usuarios)
+                        
+                        data_validade_str = info_user.get("validade_ate")
+                        if data_validade_str:
+                            data_validade = datetime.strptime(data_validade_str, "%Y-%m-%d %H:%M:%S")
+                            if datetime.now() > data_validade:
+                                registar_log(usuario, info_user.get("perfil", "N/A"), "Tentativa de Login", "Bloqueado - Validade Expirada")
+                                st.error("❌ A validade desta credencial expirou.")
+                                st.stop()
+                        
+                        perfil_detectado = info_user.get("perfil", "viewer")
+                        st.session_state.autenticado = True
+                        st.session_state.usuario_atual = usuario
+                        st.session_state.perfil_atual = perfil_detectado
+                        
+                        registar_log(usuario, perfil_detectado, "Login no Sistema", "Sucesso")
+                        st.success("Autenticação efetuada!")
+                        st.rerun()
+                    else:
+                        # Incrementa falhas consecutivas (Proteção Brute Force)
+                        info_user["tentativas_falhas"] = info_user.get("tentativas_falhas", 0) + 1
+                        avisos_restantes = MAX_TENTATIVAS - info_user["tentativas_falhas"]
+                        
+                        if info_user["tentativas_falhas"] >= MAX_TENTATIVAS:
+                            info_user["ativo"] = False
+                            registar_log(usuario, info_user.get("perfil", "N/A"), "Bloqueio de Segurança", f"Bloqueado após {MAX_TENTATIVAS} falhas")
+                            st.error(f"❌ Conta bloqueada automaticamente devido a {MAX_TENTATIVAS} tentativas malsucedidas.")
+                        else:
+                            registar_log(usuario, "N/A", "Tentativa de Login", f"Falha - Restam {avisos_restantes} tentativas")
+                            st.error(f"Utilizador ou Palavra-passe incorretos. Restam {avisos_restantes} tentativas.")
+                            
+                        usuarios[usuario] = info_user
+                        salvar_banco_usuarios(usuarios)
                 else:
-                    registar_log(usuario, "N/A", "Tentativa de Login", "Falha - Credenciais Incorretas")
+                    registar_log(usuario, "N/A", "Tentativa de Login", "Falha - Usuário Inexistente")
                     st.error("Utilizador ou Palavra-passe incorretos.")
 
 
@@ -388,6 +412,9 @@ else:
 
             st.sidebar.markdown("<h3 style='color: #64B5F6;'>Filtros de Pesquisa</h3>", unsafe_allow_html=True)
             
+            # NOVO FILTRO AVANÇADO DE TEXTO: BUSCA POR CID OU DOENÇA
+            busca_cid_doenca = st.sidebar.text_input("🔍 Buscar Código CID ou Patologia:", placeholder="Ex: Dengue, I10, Diabetes...").strip()
+
             anos_disponiveis = sorted(df["Ref_Ano"].unique(), reverse=True)
             anos_selecionados = st.sidebar.multiselect("Selecione o Ano:", options=anos_disponiveis, default=anos_disponiveis)
             
@@ -403,7 +430,7 @@ else:
             sexo_selecionado = st.sidebar.multiselect("Selecione o Sexo:", options=df["Sexo"].unique(), default=df["Sexo"].unique())
 
             estado_filtros_atual = {
-                "anos": anos_selecionados, "idade": idade_selecionada, 
+                "busca": busca_cid_doenca, "anos": anos_selecionados, "idade": idade_selecionada, 
                 "setores": setores_selecionados, "especialidades": especialidades_selecionadas, "sexo": sexo_selecionado
             }
             if st.session_state.ultimo_filtro and st.session_state.ultimo_filtro != estado_filtros_atual:
@@ -411,6 +438,13 @@ else:
             st.session_state.ultimo_filtro = estado_filtros_atual
 
             df_filtrado = df.copy()
+            
+            # Executa o filtro de busca textual se houver termo digitado (case insensitive)
+            if busca_cid_doenca:
+                cond_cid = df_filtrado["Código_CID"].str.contains(busca_cid_doenca, case=False, na=False)
+                cond_nome = df_filtrado["Nome_Doença"].str.contains(busca_cid_doenca, case=False, na=False)
+                df_filtrado = df_filtrado[cond_cid | cond_nome]
+
             if anos_selecionados:
                 df_filtrado = df_filtrado[df_filtrado["Ref_Ano"].isin(anos_selecionados)]
             if setores_selecionados:
@@ -483,11 +517,9 @@ else:
             st.markdown('<div class="custom-hr"></div>', unsafe_allow_html=True)
             st.subheader("🗃️ Registro de Dados Filtrados")
             
-            # --- CORREÇÃO DO BOTÃO DE EXPORTAÇÃO COMPLETO ---
             df_exibicao = df_filtrado.copy()
             df_exibicao['Idade_Exibição'] = df_exibicao['Idade_Tratada'].apply(lambda x: f"{int(x)}" if pd.notna(x) else "Inválida (>115)")
             
-            # Prepara os dados limpos para a planilha de download
             df_para_download = df_exibicao[['Idade_Exibição', 'Faixa_Etaria', 'Sexo', 'Dia_Atendimento', 'Código_CID', 'Nome_Doença', 'Especialidade_Atendimento', 'Setor_Atendimento']]
             
             st.download_button(
