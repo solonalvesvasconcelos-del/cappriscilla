@@ -5,7 +5,7 @@ import os
 import json
 import hashlib
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # 1. CONFIGURAÇÃO DA PÁGINA (OBRIGATORIAMENTE A PRIMEIRA INSTRUÇÃO)
 st.set_page_config(
@@ -57,23 +57,41 @@ def salvar_banco_usuarios(dados_usuarios):
 # --- INICIALIZAÇÃO DE BANCO DE DADOS, LOGS E CONVERSÃO EM LOTE ---
 if not os.path.exists(DB_USERS):
     admin_senha_cripto = gerar_senha_segura("hgujp2026")
+    agora = datetime.now()
+    validade = agora + timedelta(days=365) # 1 ano de validade
     dados_iniciais = {
         "admin": {
             "senha": admin_senha_cripto, 
             "perfil": "admin",
-            "criado_em": str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+            "ativo": True,
+            "criado_em": agora.strftime("%Y-%m-%d %H:%M:%S"),
+            "validade_ate": validade.strftime("%Y-%m-%d %H:%M:%S")
         }
     }
     salvar_banco_usuarios(dados_iniciais)
 else:
-    # --- ASSEGURA QUE TODOS OS USUÁRIOS EXISTENTES SEJAM ADMIN ---
+    # --- MIGRATION: ASSEGURA QUE TODOS OS USUÁRIOS ANTIGOS SEJAM ADMIN E SEJAM COMPATÍVEIS COM O NOVO SCHEMA ---
     try:
         usuarios_atuais = carregar_usuarios()
         alteracao_detectada = False
+        agora = datetime.now()
         
         for usuario, info in usuarios_atuais.items():
+            # Força perfil admin pedido anteriormente
             if info.get("perfil") != "admin":
                 usuarios_atuais[usuario]["perfil"] = "admin"
+                alteracao_detectada = True
+            # Força campo ativo se não existir
+            if "ativo" not in info:
+                usuarios_atuais[usuario]["ativo"] = True
+                alteracao_detectada = True
+            # Força campo validade se não existir (baseado na data de criação ou agora)
+            if "validade_ate" not in info:
+                try:
+                    criado_em = datetime.strptime(info.get("criado_em", agora.strftime("%Y-%m-%d %H:%M:%S")), "%Y-%m-%d %H:%M:%S")
+                except:
+                    criado_em = agora
+                usuarios_atuais[usuario]["validade_ate"] = (criado_em + timedelta(days=365)).strftime("%Y-%m-%d %H:%M:%S")
                 alteracao_detectada = True
         
         if alteracao_detectada:
@@ -99,14 +117,18 @@ def registar_log(usuario, perfil, evento, status):
     df_novo = pd.DataFrame([novo_log])
     df_novo.to_csv(LOG_FILE, mode='a', header=not os.path.exists(LOG_FILE), index=False)
 
-def salvar_usuario(usuario, senha_pura, perfil_selecionado):
+def salvar_usuario(usuario, senha_pura, perfil_selecionado, ativo_selecionado):
     usuarios = carregar_usuarios()
     if usuario in usuarios:
         return False
+    agora = datetime.now()
+    validade = agora + timedelta(days=365) # Calcula 1 ano após a criação
     usuarios[usuario] = {
         "senha": gerar_senha_segura(senha_pura), 
         "perfil": perfil_selecionado,
-        "criado_em": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        "ativo": ativo_selecionado,
+        "criado_em": agora.strftime("%Y-%m-%d %H:%M:%S"),
+        "validade_ate": validade.strftime("%Y-%m-%d %H:%M:%S")
     }
     salvar_banco_usuarios(usuarios)
     return True
@@ -120,6 +142,8 @@ if "perfil_atual" not in st.session_state:
     st.session_state.perfil_atual = None
 if "ultimo_filtro" not in st.session_state:
     st.session_state.ultimo_filtro = {}
+if "usuario_em_edicao" not in st.session_state:
+    st.session_state.usuario_em_edicao = None
 
 # --- INJEÇÃO DE IDENTIDADE VISUAL (TEMA DARK HGuJP) ---
 estilo_css = """
@@ -150,26 +174,94 @@ def componente_gerenciar_operadores():
         st.warning("⚠️ Permissão Negada. Painel restrito ao perfil Administrador.")
         return
 
-    # 1. LISTA DE OPERADORES EXISTENTES
+    # 1. LISTA DE OPERADORES EXISTENTES EM LINHAS INTERATIVAS
     st.subheader("👥 Operadores Cadastrados no Sistema")
     try:
         usuarios_cadastrados = carregar_usuarios()
-        lista_dados = []
-        for nome_user, info in usuarios_cadastrados.items():
-            lista_dados.append({
-                "Nome de Utilizador": nome_user,
-                "Perfil de Acesso": info.get("perfil", "viewer").upper(),
-                "Data de Criação": info.get("criado_em", "N/A")
-            })
         
-        df_usuarios = pd.DataFrame(lista_dados)
-        st.dataframe(df_usuarios, use_container_width=True)
+        # Cabeçalho da tabela estruturada por colunas
+        c_user, c_perf, c_status, c_criacao, c_validade, c_acao = st.columns([2, 1.5, 1, 2, 2, 1])
+        c_user.markdown("**Usuário**")
+        c_perf.markdown("**Perfil**")
+        c_status.markdown("**Status**")
+        c_criacao.markdown("**Criação**")
+        c_validade.markdown("**Validade (1 Ano)**")
+        c_acao.markdown("**Ação**")
+        st.markdown("<hr style='margin: 5px 0; border-color: #262730;'>", unsafe_allow_html=True)
+        
+        for nome_user, info in usuarios_cadastrados.items():
+            c_user, c_perf, c_status, c_criacao, c_validade, c_acao = st.columns([2, 1.5, 1, 2, 2, 1])
+            c_user.write(nome_user)
+            c_perf.write(info.get("perfil", "viewer").upper())
+            
+            # Status Visual
+            is_ativo = info.get("ativo", True)
+            c_status.write("🟢 Ativo" if is_ativo else "🔴 Inativo")
+            
+            c_criacao.write(info.get("criado_em", "N/A"))
+            c_validade.write(info.get("validade_ate", "N/A"))
+            
+            # Botão de edição na linha
+            if c_acao.button("📝 Editar", key=f"btn_edit_{nome_user}", use_container_width=True):
+                st.session_state.usuario_em_edicao = nome_user
+                st.rerun()
+                
     except Exception as e:
         st.error(f"Erro ao carregar lista de utilizadores: {e}")
 
+    # --- POP-UP / EXPANDER COMPONENTE DE EDIÇÃO DE DADOS ---
+    if st.session_state.usuario_em_edicao:
+        st.markdown('<div class="custom-hr"></div>', unsafe_allow_html=True)
+        u_edit = st.session_state.usuario_em_edicao
+        info_u = usuarios_cadastrados[u_edit]
+        
+        st.subheader(f"⚙️ Editando Operador: {u_edit}")
+        with st.form(key="form_edicao_operador"):
+            col_e1, col_e2 = st.columns(2)
+            with col_e1:
+                perfil_edit = st.selectbox("Alterar Perfil:", ["admin", "viewer"], index=0 if info_u.get("perfil") == "admin" else 1)
+                ativo_edit = st.checkbox("Conta Ativa", value=info_u.get("ativo", True), help="Desmarque para bloquear imediatamente o acesso deste operador.")
+            with col_e2:
+                nova_senha_edit = st.text_input("Nova Palavra-passe (Deixe em branco para manter a atual):", type="password")
+                
+                # Campo de Validade Informativo / Ajustável por segurança
+                data_val_atual = datetime.strptime(info_u.get("validade_ate"), "%Y-%m-%d %H:%M:%S")
+                validade_edit_dt = st.date_input("Nova Data de Validade:", value=data_val_atual.date())
+            
+            c_b1, c_b2 = st.columns(2)
+            if c_b1.form_submit_button("Salvar Alterações", use_container_width=True):
+                usuarios_atualizados = carregar_usuarios()
+                
+                # Atualiza os dados básicos
+                usuarios_atualizados[u_edit]["perfil"] = perfil_edit
+                usuarios_atualizados[u_edit]["ativo"] = ativo_edit
+                
+                # Junta a nova data escolhida mantendo a hora original ou definindo o fim do dia
+                usuarios_atualizados[u_edit]["validade_ate"] = f"{validade_edit_dt} 23:59:59"
+                
+                # Se digitou nova senha, atualiza criptografado
+                if len(nova_senha_edit.strip()) >= 6:
+                    usuarios_atualizados[u_edit]["senha"] = gerar_senha_segura(nova_senha_edit)
+                    log_msg = f"Modificou dados e senha do usuário '{u_edit}'"
+                elif len(nova_senha_edit.strip()) > 0:
+                    st.error("A nova senha precisa ter no mínimo 6 caracteres!")
+                    st.stop()
+                else:
+                    log_msg = f"Modificou dados estruturais do usuário '{u_edit}' (Mantendo senha anterior)"
+                
+                salvar_banco_usuarios(usuarios_atualizados)
+                registar_log(st.session_state.usuario_atual, st.session_state.perfil_atual, log_msg, "Sucesso")
+                st.success(f"Dados do operador '{u_edit}' atualizados com sucesso!")
+                st.session_state.usuario_em_edicao = None
+                st.rerun()
+                
+            if c_b2.form_submit_button("Cancelar Edição", use_container_width=True):
+                st.session_state.usuario_em_edicao = None
+                st.rerun()
+
     st.markdown('<div class="custom-hr"></div>', unsafe_allow_html=True)
 
-    # 2. EXPANDER PARA ADICIONAR OPERADOR COM PERFIL
+    # 2. SEÇÃO PARA CRIAR NOVO OPERADOR
     with st.expander("➕ Cadastrar Novo Operador / Utilizador"):
         _, col_central, _ = st.columns([1, 1.5, 1])
         with col_central:
@@ -177,6 +269,7 @@ def componente_gerenciar_operadores():
                 st.markdown("<h4 style='color: #4CAF50; margin-top: 0;'>Dados do Novo Operador</h4>", unsafe_allow_html=True)
                 novo_usuario = st.text_input("Nome de Utilizador:", placeholder="Ex: ten.silva")
                 perfil_novo = st.selectbox("Perfil de Acesso:", ["admin", "viewer"], help="Admin: Acesso total | Viewer: Apenas relatórios")
+                ativo_novo = st.checkbox("Ativar na criação", value=True)
                 nova_senha = st.text_input("Definir Palavra-passe:", type="password", placeholder="Mínimo 6 caracteres")
                 confirmar_senha = st.text_input("Confirmar Palavra-passe:", type="password")
                 botao_cadastrar = st.form_submit_button("Confirmar e Salvar Conta", use_container_width=True)
@@ -187,15 +280,15 @@ def componente_gerenciar_operadores():
                     elif nova_senha != confirmar_senha:
                         st.error("As palavras-passe inseridas não coincidem.")
                     else:
-                        if salvar_usuario(novo_usuario, nova_senha, perfil_novo):
-                            registar_log(st.session_state.usuario_atual, st.session_state.perfil_atual, f"Criou utilizador '{novo_usuario}' com perfil '{perfil_novo}'", "Sucesso")
-                            st.success(f"Utilizador '{novo_usuario}' registrado como {perfil_novo.upper()} com sucesso!")
+                        if salvar_usuario(novo_usuario, nova_senha, perfil_novo, ativo_novo):
+                            registar_log(st.session_state.usuario_atual, st.session_state.perfil_atual, f"Criou utilizador '{novo_usuario}' (Validade de 1 ano)", "Sucesso")
+                            st.success(f"Utilizador '{novo_usuario}' registrado com sucesso! Expira automaticamente em 1 ano.")
                             st.rerun()
                         else:
                             st.error("Este nome de utilizador já se encontra registado no sistema.")
 
 
-# --- TELA DE AUTENTICAÇÃO INICIAL ---
+# --- TELA DE AUTENTICAÇÃO INICIAL COM VALIDAÇÃO COMPLETA ---
 def tela_autenticacao():
     st.markdown('<div style="text-align: center; margin-top: 50px;">', unsafe_allow_html=True)
     st.markdown('<h1 class="main-title" style="display: inline-block; text-align: left;">HOSPITAL DE GUARNIÇÃO DE JOÃO PESSOA</h1>', unsafe_allow_html=True)
@@ -213,7 +306,25 @@ def tela_autenticacao():
             if botao_login:
                 usuarios = carregar_usuarios()
                 if usuario in usuarios and verificar_senha_segura(senha, usuarios[usuario]["senha"]):
-                    perfil_detectado = usuarios[usuario].get("perfil", "viewer")
+                    info_user = usuarios[usuario]
+                    
+                    # 1. VALIDAÇÃO: CHECAGEM DE STATUS ATIVO
+                    if not info_user.get("ativo", True):
+                        registar_log(usuario, info_user.get("perfil", "N/A"), "Tentativa de Login", "Bloqueado - Usuário Inativo")
+                        st.error("⚠️ Esta conta foi desativada pelo administrador do HGuJP.")
+                        st.stop()
+                    
+                    # 2. VALIDAÇÃO: CHECAGEM DE DATA DE VALIDADE
+                    data_validade_str = info_user.get("validade_ate")
+                    if data_validade_str:
+                        data_validade = datetime.strptime(data_validade_str, "%Y-%m-%d %H:%M:%S")
+                        if datetime.now() > data_validade:
+                            registar_log(usuario, info_user.get("perfil", "N/A"), "Tentativa de Login", "Bloqueado - Validade Expirada")
+                            st.error(f"❌ A validade desta credencial expirou em ({data_validade_str}). Solicite renovação.")
+                            st.stop()
+                    
+                    # Se passar nas duas validações, efetua o login
+                    perfil_detectado = info_user.get("perfil", "viewer")
                     st.session_state.autenticado = True
                     st.session_state.usuario_atual = usuario
                     st.session_state.perfil_atual = perfil_detectado
@@ -236,6 +347,7 @@ else:
         st.session_state.autenticado = False
         st.session_state.usuario_atual = None
         st.session_state.perfil_atual = None
+        st.session_state.usuario_em_edicao = None
         st.rerun()
 
     st.sidebar.markdown(f"👤 Operador: **{st.session_state.usuario_atual}** ({st.session_state.perfil_atual.upper()})")
@@ -407,13 +519,12 @@ else:
         st.markdown('<p class="sub-title">HGuJP — Histórico de Acessos, Cliques, Filtros e Ações de Utilizadores</p>', unsafe_allow_html=True)
         
         try:
-            # Tratamento adaptivo: ignora linhas corrompidas antigas de 4 colunas se houverem
             df_logs = pd.read_csv(LOG_FILE, on_bad_lines='skip')
             df_logs = df_logs.iloc[::-1]
             
             c1, c2 = st.columns(2)
             c1.metric("Total de Eventos Gravados", len(df_logs))
-            c2.metric("Falhas de Login Detetadas", len(df_logs[df_logs["Status"].str.contains("Falha", na=False)]))
+            c2.metric("Falhas/Bloqueios Detetados", len(df_logs[df_logs["Status"].str.contains("Falha|Bloqueado", na=False)]))
             
             st.markdown('<div class="custom-hr"></div>', unsafe_allow_html=True)
             st.dataframe(df_logs, use_container_width=True)
