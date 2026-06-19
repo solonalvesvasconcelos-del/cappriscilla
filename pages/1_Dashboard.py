@@ -2,30 +2,27 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
+# 1. A PRIMEIRA INSTRUÇÃO DO SCRIPT DEVE SER ESTA:
+st.set_page_config(
+    page_title="HGuJP - Dashboard de Atendimentos", 
+    page_icon="🏥",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
 # --- TRAVA DE SEGURANÇA CRÍTICA ---
-# Se o utilizador tentar aceder direto pelo caminho /Dashboard sem logar, o script para aqui.
 if "autenticado" not in st.session_state or not st.session_state.autenticado:
-    st.set_page_config(page_title="Acesso Negado", page_icon="🛑")
     st.error("🛑 Erro: Acesso Restrito. É necessário efetuar o login na página inicial antes de aceder ao Dashboard.")
     st.markdown("[Clique aqui para voltar à página de Autenticação](/)")
     st.stop() 
 
-# --- CASO ESTEJA LOGADO, O RESTANTE DO CÓDIGO GOVERNA ---
-st.set_page_config(
-    page_title="HGuJP - Dashboard de Atendimentos", 
-    page_icon="🏥",
-    layout="wide"
-)
-
-# Botão de Logout na barra lateral do caminho do Dashboard
-if st.sidebar.button("🔒 Terminar Sessão (Logout)"):
-    st.session_state.autenticado = False
-    st.rerun()
-
-st.sidebar.markdown("<h3 style='color: #64B5F6;'>Filtros de Pesquisa</h3>", unsafe_allow_html=True)
-
+# --- SE ESTIVER LOGADO, O RESTANTE DO CÓDIGO GOVERNA ---
+# CSS para ocultar a navegação nativa duplicada e aplicar o Tema Dark
 st.markdown("""
     <style>
+        /* Oculta os links de páginas nativos na barra lateral */
+        [data-testid="stSidebarNav"] {display: none !important;}
+        
         .stApp { background-color: #0E1117; color: #FAFAFA; }
         .main-title { color: #FFFFFF; font-family: sans-serif; font-weight: 700; border-left: 5px solid #4CAF50; padding-left: 15px; margin-bottom: 5px; }
         .sub-title { color: #A0AAB2; font-size: 14px; margin-top: -10px; margin-bottom: 25px; }
@@ -34,6 +31,14 @@ st.markdown("""
         .custom-hr { border: 0; height: 2px; background-image: linear-gradient(to right, #4CAF50, #1E88E5, rgba(0,0,0,0)); margin-top: 20px; margin-bottom: 20px; }
     </style>
 """, unsafe_allow_html=True)
+
+# Botão de Logout personalizado na barra lateral
+if st.sidebar.button("🔒 Terminar Sessão (Logout)", use_container_width=True):
+    st.session_state.autenticado = False
+    st.rerun()
+
+st.sidebar.markdown("<hr style='border-color: #262730;'>", unsafe_allow_html=True)
+st.sidebar.markdown("<h3 style='color: #64B5F6;'>Filtros de Pesquisa</h3>", unsafe_allow_html=True)
 
 st.markdown('<h1 class="main-title">HOSPITAL DE GUARNIÇÃO DE JOÃO PESSOA</h1>', unsafe_allow_html=True)
 st.markdown('<p class="sub-title">Diretoria de Saúde — Painel Analítico de Atendimentos Ambulatoriais (HGuJP)</p>', unsafe_allow_html=True)
