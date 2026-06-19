@@ -73,6 +73,11 @@ def registar_log(usuario, perfil, evento, status):
     df_novo = pd.DataFrame([novo_log])
     df_novo.to_csv(LOG_FILE, mode='a', header=not os.path.exists(LOG_FILE), index=False)
 
+def processar_exportacao_csv(dataframe_alvo):
+    """Gera a string CSV dos dados filtrados e armazena a ação no arquivo de auditoria."""
+    registar_log(st.session_state.get("usuario_atual", "admin"), st.session_state.get("perfil_atual", "admin"), "Exportou Dados Ambulatoriais (CSV)", "Sucesso")
+    return dataframe_alvo.to_csv(index=False).encode('utf-8')
+
 # --- INICIALIZAÇÃO CONTROLADA DE BASES ---
 if not os.path.exists(DB_USERS):
     admin_senha_cripto = gerar_senha_segura("hgujp2026")
@@ -303,7 +308,7 @@ else:
                 st.markdown('<div class="custom-hr"></div>', unsafe_allow_html=True)
                 row3_col1, _ = st.columns([2, 1])
                 with row3_col1:
-                    st.subheader("🩺 Atendimentos por Especialidade")
+                    st.subheader("Nordeste 🩺 Atendimentos por Especialidade")
                     df_esp = df_filtrado.groupby('Especialidade_Atendimento').size().reset_index(name='Volume').sort_values(by='Volume', ascending=False)
                     st.plotly_chart(aplicar_layout_dark(px.bar(df_esp, x='Especialidade_Atendimento', y='Volume', color_discrete_sequence=['#FF9800'], labels={'Especialidade_Atendimento': 'Especialidade'})), use_container_width=True)
             else:
