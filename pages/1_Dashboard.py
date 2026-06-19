@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# 1. A PRIMEIRA INSTRUÇÃO DO SCRIPT DEVE SER ESTA:
+# 1. PRIMEIRA LINHA DO SCRIPT (OBRIGATÓRIO)
 st.set_page_config(
     page_title="HGuJP - Dashboard de Atendimentos", 
     page_icon="🏥",
@@ -17,12 +17,9 @@ if "autenticado" not in st.session_state or not st.session_state.autenticado:
     st.stop() 
 
 # --- SE ESTIVER LOGADO, O RESTANTE DO CÓDIGO GOVERNA ---
-# CSS para ocultar a navegação nativa duplicada e aplicar o Tema Dark
 st.markdown("""
     <style>
-        /* Oculta os links de páginas nativos na barra lateral */
         [data-testid="stSidebarNav"] {display: none !important;}
-        
         .stApp { background-color: #0E1117; color: #FAFAFA; }
         .main-title { color: #FFFFFF; font-family: sans-serif; font-weight: 700; border-left: 5px solid #4CAF50; padding-left: 15px; margin-bottom: 5px; }
         .sub-title { color: #A0AAB2; font-size: 14px; margin-top: -10px; margin-bottom: 25px; }
