@@ -125,7 +125,6 @@ def componente_gerenciar_operadores():
     try:
         usuarios_cadastrados = carregar_usuarios()
         
-        # Converte o dicionário do JSON para uma tabela visual limpa
         lista_dados = []
         for nome_user, info in usuarios_cadastrados.items():
             lista_dados.append({
@@ -140,7 +139,7 @@ def componente_gerenciar_operadores():
 
     st.markdown('<div class="custom-hr"></div>', unsafe_allow_html=True)
 
-    # 2. BOTÃO NOVO DENTRO DE EXPANDER PARA ADICIONAR OPERADOR
+    # 2. EXPANDER PARA ADICIONAR OPERADOR
     with st.expander("➕ Cadastrar Novo Operador / Utilizador"):
         _, col_central, _ = st.columns([1, 1.5, 1])
         with col_central:
@@ -160,12 +159,12 @@ def componente_gerenciar_operadores():
                         if salvar_usuario(novo_usuario, nova_senha):
                             registar_log("admin", f"Criou utilizador: {novo_usuario}", "Sucesso")
                             st.success(f"Utilizador '{novo_usuario}' registrado com sucesso!")
-                            st.rerun() # Recarrega a página para atualizar a lista acima
+                            st.rerun()
                         else:
                             st.error("Este nome de utilizador já se encontra registado no sistema.")
 
 
-# --- TELA DE AUTENTICAÇÃO INICIAL (LOGIN TOTALMENTE LIMPO) ---
+# --- TELA DE AUTENTICAÇÃO INICIAL ---
 def tela_autenticacao():
     st.markdown('<div style="text-align: center; margin-top: 50px;">', unsafe_allow_html=True)
     st.markdown('<h1 class="main-title" style="display: inline-block; text-align: left;">HOSPITAL DE GUARNIÇÃO DE JOÃO PESSOA</h1>', unsafe_allow_html=True)
@@ -207,14 +206,17 @@ else:
     st.sidebar.markdown(f"👤 Operador: **{st.session_state.usuario_atual}**")
     st.sidebar.markdown("<div class='custom-hr'></div>", unsafe_allow_html=True)
     
-    # Construção dinâmica das opções do menu baseado no perfil logado
-    opcoes_navegacao = ["📊 Dashboard Ambulatorial", "📜 Logs de Auditoria"]
+    # CONSTRUÇÃO DINÂMICA DO MENU COM BASE NO PERFIL
+    opcoes_navegacao = ["📊 Dashboard Ambulatorial"]
+    
+    # Restrição absoluta: Logs e Gerenciamento aparecem apenas para o admin
     if st.session_state.usuario_atual == "admin":
+        opcoes_navegacao.append("📜 Logs de Auditoria")
         opcoes_navegacao.append("➕ Gerenciar Operadores")
         
     modo_visao = st.sidebar.radio("Navegação do Sistema:", opcoes_navegacao)
 
-    # --- VISÃO 1: DASHBOARD DE SAÚDE ---
+    # --- VISÃO 1: DASHBOARD DE SAÚDE (ACESSO GERAL) ---
     if modo_visao == "📊 Dashboard Ambulatorial":
         st.markdown('<h1 class="main-title">HOSPITAL DE GUARNIÇÃO DE JOÃO PESSOA</h1>', unsafe_allow_html=True)
         st.markdown('<p class="sub-title">Diretoria de Saúde — Painel Analítico de Atendimentos Ambulatoriais (HGuJP)</p>', unsafe_allow_html=True)
@@ -261,7 +263,6 @@ else:
             
             sexo_selecionado = st.sidebar.multiselect("Selecione o Sexo:", options=df["Sexo"].unique(), default=df["Sexo"].unique())
 
-            # Filtros Sequenciais Estáveis
             df_filtrado = df.copy()
             if anos_selecionados:
                 df_filtrado = df_filtrado[df_filtrado["Ref_Ano"].isin(anos_selecionados)]
@@ -341,8 +342,8 @@ else:
         except Exception as e:
             st.error(f"Erro ao processar os dados. Detalhes: {e}")
 
-    # --- VISÃO 2: LOGS DE AUDITORIA ---
-    elif modo_visao == "📜 Logs de Auditoria":
+    # --- VISÃO 2: LOGS DE AUDITORIA (EXCLUSIVO ADMIN) ---
+    elif modo_visao == "📜 Logs de Auditoria" and st.session_state.usuario_atual == "admin":
         st.markdown('<h1 class="main-title">LOGS DE AUDITORIA DO SISTEMA</h1>', unsafe_allow_html=True)
         st.markdown('<p class="sub-title">HGuJP — Histórico de Acessos e Ações de Utilizadores</p>', unsafe_allow_html=True)
         
@@ -357,17 +358,16 @@ else:
             st.markdown('<div class="custom-hr"></div>', unsafe_allow_html=True)
             st.dataframe(df_logs, use_container_width=True)
             
-            if st.session_state.usuario_atual == "admin":
-                if st.button("🚨 Limpar Histórico de Logs", use_container_width=True):
-                    df_vazio = pd.DataFrame(columns=["Data_Hora", "Utilizador", "Evento", "Status"])
-                    df_vazio.to_csv(LOG_FILE, index=False)
-                    registar_log("admin", "Limpeza de Logs de Auditoria", "Sucesso")
-                    st.success("Histórico limpo!")
-                    st.rerun()
+            if st.button("🚨 Limpar Histórico de Logs", use_container_width=True):
+                df_vazio = pd.DataFrame(columns=["Data_Hora", "Utilizador", "Evento", "Status"])
+                df_vazio.to_csv(LOG_FILE, index=False)
+                registar_log("admin", "Limpeza de Logs de Auditoria", "Sucesso")
+                st.success("Histórico limpo!")
+                st.rerun()
                     
         except Exception as e:
             st.error(f"Erro ao ler o ficheiro de auditoria: {e}")
 
-    # --- VISÃO 3: GERENCIAR OPERADORES (EXCLUSIVO ADMIN AUTENTICADO) ---
-    elif modo_visao == "➕ Gerenciar Operadores":
+    # --- VISÃO 3: GERENCIAR OPERADORES (EXCLUSIVO ADMIN) ---
+    elif modo_visao == "➕ Gerenciar Operadores" and st.session_state.usuario_atual == "admin":
         componente_gerenciar_operadores()
