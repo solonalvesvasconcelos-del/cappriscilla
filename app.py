@@ -32,7 +32,8 @@ def aplicar_layout_dark(fig):
         paper_bgcolor='rgba(0,0,0,0)',
         font_color='#FAFAFA', 
         title_font_color='#FAFAFA', 
-        legend_font_color='#FAFAFA'
+        legend_font_color='#FAFAFA',
+        margin=dict(l=20, r=20, t=40, b=20)
     )
     fig.update_xaxes(gridcolor='#262730', zerolinecolor='#262730')
     fig.update_yaxes(gridcolor='#262730', zerolinecolor='#262730')
@@ -110,15 +111,51 @@ for chave, valor_padrao in [("autenticado", False), ("usuario_atual", None), ("p
     if chave not in st.session_state:
         st.session_state[chave] = valor_padrao
 
-# --- INJEÇÃO DE IDENTIDADE VISUAL ---
+# --- INJEÇÃO DE IDENTIDADE VISUAL E ADEQUAÇÃO DE TELAS (CSS RESPONSIVO) ---
 st.markdown("""
 <style>
+    /* Oculta navegação padrão colapsada */
     [data-testid="stSidebarNav"] { display: none !important; }
+    
+    /* Configuração Base de Cores */
     .stApp { background-color: #0E1117; color: #FAFAFA; }
-    .main-title { color: #FFFFFF; font-family: 'Helvetica Neue', Arial, sans-serif; font-weight: 700; border-left: 5px solid #4CAF50; padding-left: 15px; margin-bottom: 5px; }
+    
+    /* Títulos e Identidade Visual Estilizada */
+    .main-title { color: #FFFFFF; font-family: 'Helvetica Neue', Arial, sans-serif; font-weight: 700; border-left: 5px solid #4CAF50; padding-left: 15px; margin-bottom: 5px; font-size: 2rem; }
     .sub-title { color: #A0AAB2; font-size: 14px; margin-top: -10px; margin-bottom: 25px; }
-    div[data-testid="stMetricValue"] { color: #64B5F6 !important; font-weight: bold; }
+    div[data-testid="stMetricValue"] { color: #64B5F6 !important; font-weight: bold; font-size: 1.8rem; }
     .custom-hr { border: 0; height: 2px; background-image: linear-gradient(to right, #4CAF50, #1E88E5, rgba(0,0,0,0)); margin: 20px 0; }
+
+    /* ================================================================= */
+    /* RESPONSIVIDADE: MEDIA QUERY PARA DISPOSITIVOS MÓVEIS (CELULARES)  */
+    /* ================================================================= */
+    @media (max-width: 768px) {
+        /* Reduz tamanho dos títulos principais para caber na tela sem quebrar linhas de forma bizarra */
+        .main-title {
+            font-size: 1.3rem !important;
+            border-left: 4px solid #4CAF50 !important;
+            padding-left: 8px !important;
+        }
+        
+        /* Ajusta o tamanho das fontes dos cards de métricas */
+        div[data-testid="stMetricValue"] {
+            font-size: 1.4rem !important;
+        }
+        div[data-testid="stMetricLabel"] {
+            font-size: 0.85rem !important;
+        }
+        
+        /* Otimiza preenchimento interno dos blocos do Streamlit em telas menores */
+        div[data-testid="column"] {
+            padding: 5px 0px !important;
+            margin-bottom: 10px !important;
+        }
+
+        /* Melhora a visualização das tabelas de log e formulários em telas compactas */
+        .stDataFrame, div[data-testid="stForm"] {
+            padding: 5px !important;
+        }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -269,14 +306,14 @@ else:
                 df_filtrado = df_filtrado[df_filtrado["Ref_Ano"].isin(anos_selecionados)]
             if setores_selecionados:
                 df_filtrado = df_filtrado[df_filtrado["Setor_Atendimento"].isin(setores_selecionados)]
-            if Harbor := especialidades_selecionadas:
+            if especialidades_selecionadas:
                 df_filtrado = df_filtrado[df_filtrado["Especialidade_Atendimento"].isin(especialidades_selecionadas)]
             if sexo_selecionado:
                 df_filtrado = df_filtrado[df_filtrado["Sexo"].isin(sexo_selecionado)]
             
             df_filtrado = df_filtrado[(df_filtrado["Idade_Tratada"].between(idade_selecionada[0], idade_selecionada[1])) | (df_filtrado["Idade_Tratada"].isna())]
 
-            # --- RENDIMENTO VISUAL ---
+            # --- RENDIMENTO VISUAL MTRICAS ---
             col1, col2, col3 = st.columns(3)
             col1.metric("Total de Atendimentos", f"{len(df_filtrado)}")
             col2.metric("Média de Idade", f"{df_filtrado['Idade_Tratada'].dropna().mean():.1f} anos" if len(df_filtrado) > 0 else "N/A")
