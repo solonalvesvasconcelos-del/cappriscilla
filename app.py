@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# 1. PRIMEIRA LINHA DO SCRIPT (OBRIGATÓRIO)
+# Configuração da página e tema visual
 st.set_page_config(
     page_title="HGuJP - Dashboard de Atendimentos", 
     page_icon="🏥",
@@ -12,32 +12,37 @@ st.set_page_config(
 # --- INJEÇÃO DE IDENTIDADE VISUAL (TEMA DARK HGuJP) ---
 st.markdown("""
     <style>
+        /* Fundo geral escuro */
         .stApp {
             background-color: #0E1117;
             color: #FAFAFA;
         }
+        /* Estilização do título principal */
         .main-title {
             color: #FFFFFF; 
             font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
             font-weight: 700;
-            border-left: 5px solid #4CAF50; /* Verde Militar Neon */
+            border-left: 5px solid #4CAF50; /* Verde Militar Neon para destaque no escuro */
             padding-left: 15px;
             margin-bottom: 5px;
         }
+        /* Subtítulo */
         .sub-title {
             color: #A0AAB2;
             font-size: 14px;
             margin-top: -10px;
             margin-bottom: 25px;
         }
+        /* Customização dos Cards de Métricas para o Modo Escuro */
         div[data-testid="stMetricValue"] {
-            color: #64B5F6 !important; /* Azul brilhante */
+            color: #64B5F6 !important; /* Azul brilhante para leitura em fundo escuro */
             font-weight: bold;
         }
         div[data-testid="stMetricLabel"] {
             color: #E0E0E0 !important;
             font-weight: 500 !important;
         }
+        /* Divisores personalizados em degradê dark */
         .custom-hr {
             border: 0;
             height: 2px;
@@ -45,14 +50,18 @@ st.markdown("""
             margin-top: 20px;
             margin-bottom: 20px;
         }
+        /* Ajuste de cor dos textos na barra lateral */
+        .css-6qob1r, .stMarkdown {
+            color: #FAFAFA;
+        }
     </style>
 """, unsafe_allow_html=True)
 
-# Cabeçalho Principal do Dashboard
+# Título Customizado no Estilo Dark Institutional
 st.markdown('<h1 class="main-title">HOSPITAL DE GUARNIÇÃO DE JOÃO PESSOA</h1>', unsafe_allow_html=True)
 st.markdown('<p class="sub-title">Diretoria de Saúde — Painel Analítico de Atendimentos Ambulatoriais (HGuJP)</p>', unsafe_allow_html=True)
 
-# Função auxiliar para aplicar o layout escuro nos gráficos
+# Configuração global de layout escuro para os gráficos do Plotly
 def aplicar_layout_dark(fig):
     fig.update_layout(
         plot_bgcolor='rgba(0,0,0,0)',
@@ -62,26 +71,27 @@ def aplicar_layout_dark(fig):
         legend_font_color='#FAFAFA'
     )
     fig.update_xaxes(gridcolor='#262730', zerolinecolor='#262730')
-    fig.update_yaxes(gridcolor='#262730', zerolinecolor='#262730')
+    fig.update_axes(gridcolor='#262730', zerolinecolor='#262730')
     return fig
 
-# Carregar os dados de forma otimizada
+# Carregar os dados
 @st.cache_data
 def load_data():
     df = pd.read_csv("dados.csv")
     df['Dia_Atendimento'] = pd.to_datetime(df['Dia_Atendimento'])
     
-    # Colunas de apoio para períodos
+    # Criar coluna de Ano e Ano-Mês para agrupamentos posteriores
     df['Ano'] = df['Dia_Atendimento'].dt.year
     df['Ano_Mes'] = df['Dia_Atendimento'].dt.to_period('M').astype(str)
     
-    # TRATAMENTO DE IDADE: Valores acima de 115 anos passam a ser nulos (inválidos)
+    # TRATAMENTO DE IDADE: Converter para numérico e forçar valores acima de 115 a virarem nulos (None)
     df['Idade_Tratada'] = pd.to_numeric(df['Idade'], errors='coerce')
     df.loc[df['Idade_Tratada'] > 115, 'Idade_Tratada'] = None
     
-    # Agrupamento de faixas etárias de 10 em 10 anos
+    # Criar faixas etárias de 10 em 10 anos (apenas para idades válidas)
     bins = list(range(0, 121, 10))
     labels = [f"{i}-{i+9}" for i in bins[:-1]]
+    
     df['Faixa_Etaria'] = pd.cut(df['Idade_Tratada'], bins=bins, labels=labels, right=False)
     df['Faixa_Etaria'] = df['Faixa_Etaria'].astype(str).replace('nan', 'Não Informada')
     
@@ -107,7 +117,7 @@ try:
     
     sexo_selecionado = st.sidebar.multiselect("Selecione o Sexo:", options=df["Sexo"].unique(), default=df["Sexo"].unique())
 
-    # Aplicação dos filtros ao DataFrame base
+    # Aplicando os filtros globais
     df_filtrado = df[
         (df["Ano"].isin(anos_selecionados)) &
         (df["Setor_Atendimento"].isin(setores_selecionados)) &
@@ -115,7 +125,7 @@ try:
         (df["Sexo"].isin(sexo_selecionado))
     ]
     
-    # Filtro do Slider de Idade (mantém válidos dentro do range + idades com marcadas como inválidas)
+    # Aplicando o filtro específico do Slider de Idade
     df_filtrado = df_filtrado[
         (df_filtrado["Idade_Tratada"].between(idade_selecionada[0], idade_selecionada[1])) | 
         (df_filtrado["Idade_Tratada"].isna())
@@ -136,12 +146,12 @@ try:
     row1_col1, row1_col2 = st.columns(2)
 
     with row1_col1:
-        st.subheader("📈 Linha do Tempo de Atendimentos (Por Mês)")
+        st.subheader("增 Linha do Tempo de Atendimentos (Por Mês)")
         if len(df_filtrado) > 0:
             df_mes = df_filtrado.groupby('Ano_Mes').size().reset_index(name='Atendimentos').sort_values('Ano_Mes')
             fig_linha = px.bar(df_mes, x='Ano_Mes', y='Atendimentos', 
                                labels={'Ano_Mes': 'Mês/Ano', 'Atendimentos': 'Atendimentos'}, 
-                               color_discrete_sequence=['#1E88E5'])
+                               color_discrete_sequence=['#1E88E5']) # Azul Neon Dark
             fig_linha = aplicar_layout_dark(fig_linha)
             st.plotly_chart(fig_linha, use_container_width=True)
         else:
@@ -151,7 +161,7 @@ try:
         st.subheader("👥 Distribuição por Sexo Biológico")
         if len(df_filtrado) > 0:
             fig_pizza = px.pie(df_filtrado, names='Sexo', hole=0.4, 
-                               color_discrete_sequence=['#1E88E5', '#4CAF50'])
+                               color_discrete_sequence=['#1E88E5', '#4CAF50']) # Azul e Verde Neon contrastantes
             fig_pizza = aplicar_layout_dark(fig_pizza)
             st.plotly_chart(fig_pizza, use_container_width=True)
         else:
@@ -168,7 +178,7 @@ try:
             
             fig_idade = px.bar(df_idade, x='Faixa_Etaria', y='Quantidade', 
                                labels={'Faixa_Etaria': 'Grupo de Idade', 'Quantidade': 'Pacientes'}, 
-                               color='Quantidade', color_continuous_scale='YlGnBu')
+                               color='Quantidade', color_continuous_scale='YlGnBu') # Escala luminosa para fundo escuro
             fig_idade = aplicar_layout_dark(fig_idade)
             st.plotly_chart(fig_idade, use_container_width=True)
         else:
