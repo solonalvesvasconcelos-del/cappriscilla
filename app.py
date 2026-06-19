@@ -230,7 +230,7 @@ else:
         opcoes_navegacao.extend(["📜 Logs de Auditoria", "➕ Gerenciar Operadores"])
     modo_visao = st.sidebar.radio("Navegação:", opcoes_navegacao)
 
-    # --- PERFORMANCE CACHE & ORDENAÇÃO CATEGÓRICA DA FAIXA ETÁRIA ---
+    # --- PERFORMANCE CACHE ---
     @st.cache_data(ttl=3600)
     def load_data():
         df = pd.read_csv("dados.csv")
@@ -269,7 +269,7 @@ else:
                 df_filtrado = df_filtrado[df_filtrado["Ref_Ano"].isin(anos_selecionados)]
             if setores_selecionados:
                 df_filtrado = df_filtrado[df_filtrado["Setor_Atendimento"].isin(setores_selecionados)]
-            if especialidades_selecionadas:
+            if Harbor := especialidades_selecionadas:
                 df_filtrado = df_filtrado[df_filtrado["Especialidade_Atendimento"].isin(especialidades_selecionadas)]
             if sexo_selecionado:
                 df_filtrado = df_filtrado[df_filtrado["Sexo"].isin(sexo_selecionado)]
@@ -303,14 +303,6 @@ else:
                     st.subheader("📋 Top 10 Patologias (CID)")
                     df_cid = df_filtrado.groupby(['Código_CID', 'Nome_Doença']).size().reset_index(name='Total').sort_values(by='Total', ascending=False).head(10)
                     st.plotly_chart(aplicar_layout_dark(px.bar(df_cid, x='Total', y='Código_CID', orientation='h', text='Nome_Doença', color_discrete_sequence=['#64B5F6'])), use_container_width=True)
-                
-                # --- NOVA LINHA DE GRÁFICO: ESPECIALIDADES AMBULATORIAIS ---
-                st.markdown('<div class="custom-hr"></div>', unsafe_allow_html=True)
-                row3_col1, _ = st.columns([2, 1])
-                with row3_col1:
-                    st.subheader("Nordeste 🩺 Atendimentos por Especialidade")
-                    df_esp = df_filtrado.groupby('Especialidade_Atendimento').size().reset_index(name='Volume').sort_values(by='Volume', ascending=False)
-                    st.plotly_chart(aplicar_layout_dark(px.bar(df_esp, x='Especialidade_Atendimento', y='Volume', color_discrete_sequence=['#FF9800'], labels={'Especialidade_Atendimento': 'Especialidade'})), use_container_width=True)
             else:
                 st.info("Selecione filtros válidos.")
 
