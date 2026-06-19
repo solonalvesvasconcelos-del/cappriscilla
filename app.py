@@ -29,8 +29,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<h1 class="main-title">HOSPITAL DE GUARNIÇÃO DE JOÃO PESSOA</h1>', unsafe_allow_html=True)
-st.markdown('<p class="sub-title">Diretoria de Saúde — Controlo de Acesso Restrito (HGuJP)</p>', unsafe_allow_html=True)
+st.markdown('<h1 class="main-title">AMBULATÓRIO - HGUJP</h1>', unsafe_allow_html=True)
+st.markdown('<p class="sub-title">cONTROLE DE ACESSO (HGuJP)</p>', unsafe_allow_html=True)
 
 # Se já estiver autenticado, avisa e dá o botão de clique para o caminho correto
 if st.session_state.autenticado:
