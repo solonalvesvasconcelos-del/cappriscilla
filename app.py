@@ -128,6 +128,18 @@ def salvar_usuario(usuario, senha_pura, perfil_selecionado, ativo_selecionado):
     salvar_banco_usuarios(usuarios)
     return True
 
+# --- FUNÇÃO AUXILIAR DE EXPORTAÇÃO (CONVERTE E LOGA) ---
+def processar_exportacao_csv(dataframe_alvo):
+    """Gera a string CSV dos dados filtrados e armazena a ação no arquivo de auditoria."""
+    registar_log(
+        st.session_state.get("usuario_atual", "admin"), 
+        st.session_state.get("perfil_atual", "admin"), 
+        "Exportou Dados Ambulatoriais (CSV)", 
+        "Sucesso"
+    )
+    # Converte o dataframe para CSV no formato UTF-8 string pronto para download
+    return dataframe_alvo.to_csv(index=False).encode('utf-8')
+
 # --- INICIALIZAÇÃO DO ESTADO DE SESSÃO ---
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
@@ -235,7 +247,7 @@ def componente_gerenciar_operadores():
                 
                 salvar_banco_usuarios(usuarios_atualizados)
                 registar_log(st.session_state.usuario_atual, st.session_state.perfil_atual, log_msg, "Sucesso")
-                st.success(f"Dados do operador '{u_edit}' atualizados!")
+                st.success(f"Dados do operador '{u_edit}' updated!")
                 st.session_state.usuario_em_edicao = None
                 st.rerun()
                 
@@ -329,7 +341,6 @@ else:
         st.session_state.usuario_em_edicao = None
         st.rerun()
 
-    # Sanitiza a exibição para prevenir strings nulas ou erráticas na interface
     u_display = str(st.session_state.get("usuario_atual", "admin"))
     p_display = str(st.session_state.get("perfil_atual", "ADMIN")).upper()
 
@@ -413,7 +424,7 @@ else:
             cond_nula = df_filtrado["Idade_Tratada"].isna()
             df_filtrado = df_filtrado[cond_valida | cond_nula]
 
-            # --- CARDS DE MÉTRICAS DIRETOS ---
+            # --- CARDS DE MÉTRICAS ---
             col1, col2, col3 = st.columns(3)
             col1.metric("Total de Atendimentos", f"{len(df_filtrado)}")
             idades_validas = df_filtrado['Idade_Tratada'].dropna()
@@ -472,12 +483,22 @@ else:
             st.markdown('<div class="custom-hr"></div>', unsafe_allow_html=True)
             st.subheader("🗃️ Registro de Dados Filtrados")
             
-            if st.button("📥 Exportar Planilha Filtrada para CSV", use_container_width=True):
-                registar_log(st.session_state.usuario_atual, st.session_state.perfil_atual, "Exportou Dados Ambulatoriais (CSV)", "Sucesso")
-                
+            # --- CORREÇÃO DO BOTÃO DE EXPORTAÇÃO COMPLETO ---
             df_exibicao = df_filtrado.copy()
             df_exibicao['Idade_Exibição'] = df_exibicao['Idade_Tratada'].apply(lambda x: f"{int(x)}" if pd.notna(x) else "Inválida (>115)")
-            st.dataframe(df_exibicao[['Idade_Exibição', 'Faixa_Etaria', 'Sexo', 'Dia_Atendimento', 'Código_CID', 'Nome_Doença', 'Especialidade_Atendimento', 'Setor_Atendimento']], use_container_width=True)
+            
+            # Prepara os dados limpos para a planilha de download
+            df_para_download = df_exibicao[['Idade_Exibição', 'Faixa_Etaria', 'Sexo', 'Dia_Atendimento', 'Código_CID', 'Nome_Doença', 'Especialidade_Atendimento', 'Setor_Atendimento']]
+            
+            st.download_button(
+                label="📥 Exportar Planilha Filtrada para CSV",
+                data=processar_exportacao_csv(df_para_download),
+                file_name=f"HGuJP_atendimentos_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+            
+            st.dataframe(df_para_download, use_container_width=True)
 
         except Exception as e:
             st.error(f"Erro ao processar os dados. Detalhes: {e}")
