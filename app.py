@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import numpy as np
 
 # Configuração da página
 st.set_page_config(page_title="Dashboard de Atendimentos", layout="wide")
@@ -14,17 +15,23 @@ def load_data():
     df = pd.read_csv("dados.csv")
     df['Dia_Atendimento'] = pd.to_datetime(df['Dia_Atendimento'])
     
-    # Filtro automático: Desconsiderar idades acima de 130 anos (limpeza de dados)
-    df = df[df['Idade'] <= 130]
-    
     # Criar coluna de Ano e Ano-Mês para agrupamentos posteriores
     df['Ano'] = df['Dia_Atendimento'].dt.year
     df['Ano_Mes'] = df['Dia_Atendimento'].dt.to_period('M').astype(str)
     
-    # Criar faixas etárias de 10 em 10 anos
-    bins = list(range(0, int(df['Idade'].max()) + 11, 10))
+    # TRATAMENTO DE IDADE: Idades acima de 115 anos viram NaN (Inválidas/Não Informadas)
+    df['Idade_Tratada'] = pd.to_numeric(df['Idade'], errors='coerce')
+    df.loc[df['Idade_Tratada'] > 115, 'Idade_Tratada'] = np.nan
+    
+    # Criar faixas etárias de 10 em 10 anos (apenas para idades válidas)
+    # 120 para garantir que o limite de 115 esteja incluso de forma limpa na faixa 110-119
+    bins = list(range(0, 121, 10))
     labels = [f"{i}-{i+9}" for i in bins[:-1]]
-    df['Faixa_Etaria'] = pd.cut(df['Idade'], bins=bins, labels=labels, right=False)
+    
+    # Categoriza as idades válidas. As inválidas (NaN) viram automaticamente uma categoria em branco
+    df['Faixa_Etaria'] = pd.cut(df['Idade_Tratada'], bins=bins, labels=labels, right=False)
+    # Transforma em string para podermos preencher os valores nulos visualmente na tabela
+    df['Faixa_Etaria'] = df['Faixa_Etaria'].astype(str).replace('nan', 'Não Informada')
     
     return df
 
@@ -42,15 +49,14 @@ try:
         default=anos_disponiveis
     )
     
-    # Filtro dinâmico de Idade (Forçado a iniciar em 0 e limitado ao máximo do banco até 130)
+    # Filtro de Intervalo de Idade (0 a 115 anos)
     idade_min = 0
-    idade_max = int(df["Idade"].max())
-    
+    idade_max = 115
     idade_selecionada = st.sidebar.slider(
-        "Intervalo de Idade:",
+        "Intervalo de Idade Válida:",
         min_value=idade_min,
         max_value=idade_max,
-        value=(idade_min, idade_max) # Inicializa o seletor selecionando de 0 até a idade máxima
+        value=(idade_min, idade_max)
     )
     
     # Filtro de Setor
@@ -76,19 +82,29 @@ try:
         default=df["Sexo"].unique()
     )
 
-    # Aplicando os filtros ao DataFrame
+    # Aplicando os filtros globais (Ano, Setor, Especialidade, Sexo)
     df_filtrado = df[
         (df["Ano"].isin(anos_selecionados)) &
-        (df["Idade"].between(idade_selecionada[0], idade_selecionada[1])) &
         (df["Setor_Atendimento"].isin(setores_selecionados)) &
         (df["Especialidade_Atendimento"].isin(especialidades_selecionadas)) &
         (df["Sexo"].isin(sexo_selecionado))
+    ]
+    
+    # Aplicando o filtro específico do Slider de Idade 
+    # (Mantém no dataframe os registros dentro do range do slider OU os que têm idade inválida/NaN)
+    df_filtrado = df_filtrado[
+        (df_filtrado["Idade_Tratada"].between(idade_selecionada[0], idade_selecionada[1])) | 
+        (df_filtrado["Idade_Tratada"].isna())
     ]
 
     # --- CARD INDICADORES MÉTRICOS ---
     col1, col2, col3 = st.columns(3)
     col1.metric("Total de Atendimentos", f"{len(df_filtrado)}")
-    col2.metric("Média de Idade", f"{df_filtrado['Idade'].mean():.1f} anos" if len(df_filtrado) > 0 else "0 anos")
+    
+    # Média calcula apenas com base nas idades válidas (ignora os NaNs)
+    idades_validas = df_filtrado['Idade_Tratada'].dropna()
+    col2.metric("Média de Idade (Válidas)", f"{idades_validas.mean():.1f} anos" if len(idades_validas) > 0 else "N/A")
+    
     col3.metric("CIDs Únicos", f"{df_filtrado['Código_CID'].nunique()}")
 
     st.markdown("---")
@@ -123,7 +139,14 @@ try:
     with row2_col1:
         st.subheader("Distribuição por Faixa Etária (10 em 10 anos)")
         if len(df_filtrado) > 0:
+            # Agrupa por faixa etária (incluindo a categoria 'Não Informada')
             df_idade = df_filtrado.groupby('Faixa_Etaria', observed=False).size().reset_index(name='Quantidade')
+            
+            # Ordenação personalizada para deixar o 'Não Informada' por último se ele existir
+            df_idade['Faixa_Etaria'] = pd.Categorical(df_idade['Faixa_Etaria'], 
+                                                        categories=[f"{i}-{i+9}" for i in range(0, 120, 10)] + ['Não Informada'], 
+                                                        ordered=True)
+            df_idade = df_idade.sort_values('Faixa_Etaria')
             
             fig_idade = px.bar(df_idade, x='Faixa_Etaria', y='Quantidade',
                                labels={'Faixa_Etaria': 'Faixa Etária (Idade)', 'Quantidade': 'Total de Pacientes'},
@@ -149,8 +172,13 @@ try:
     # --- TABELA DE DADOS ---
     st.markdown("---")
     st.subheader("Visualização dos Dados Filtrados")
+    
+    # Preparando a coluna de idade original para exibição visual amigável caso seja inválida
+    df_exibicao = df_filtrado.copy()
+    df_exibicao['Idade_Exibição'] = df_exibicao['Idade_Tratada'].apply(lambda x: f"{int(x)}" if pd.notna(x) else "Inválida (>115)")
+    
     st.dataframe(
-        df_filtrado[['Idade', 'Faixa_Etaria', 'Sexo', 'Dia_Atendimento', 'Código_CID', 'Nome_Doença', 'Especialidade_Atendimento', 'Setor_Atendimento']], 
+        df_exibicao[['Idade_Exibição', 'Faixa_Etaria', 'Sexo', 'Dia_Atendimento', 'Código_CID', 'Nome_Doença', 'Especialidade_Atendimento', 'Setor_Atendimento']], 
         use_container_width=True
     )
 
