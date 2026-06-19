@@ -28,7 +28,7 @@ def gerar_senha_segura(senha_pura):
         salt, 
         100000
     )
-    return salt.hex() + ":" + senate_hash.hex() if 'senate_hash' in locals() else salt.hex() + ":" + senha_hash.hex()
+    return salt.hex() + ":" + senha_hash.hex()
 
 def verificar_senha_segura(senha_pura, senha_armazenada):
     """Extrai o salt e valida se a senha digitada bate com o registro de forma segura."""
@@ -48,7 +48,7 @@ def verificar_senha_segura(senha_pura, senha_armazenada):
 # --- INICIALIZAÇÃO DE BANCO DE DADOS E LOGS ---
 if not os.path.exists(DB_USERS):
     admin_senha_cripto = gerar_senha_segura("hgujp2026")
-    dados_iniciais = {"admin": {"senha": admin_senha_cripto, "criado_em": str(datetime.now())}}
+    dados_iniciais = {"admin": {"senha": admin_senha_cripto, "criado_em": str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))}}
     with open(DB_USERS, "w") as f:
         json.dump(dados_iniciais, f)
 
@@ -78,7 +78,7 @@ def salvar_usuario(usuario, senha_pura):
         return False
     usuarios[usuario] = {
         "senha": gerar_senha_segura(senha_pura), 
-        "criado_em": str(datetime.now())
+        "criado_em": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
     with open(DB_USERS, "w") as f:
         json.dump(usuarios, f)
@@ -110,75 +110,90 @@ estilo_css = """
 st.markdown(estilo_css, unsafe_allow_html=True)
 
 
-# --- SUB-ROTINA: FORMULÁRIO EXCLUSIVO DE CADASTRO ---
-def componente_cadastro_usuario():
-    """Renderiza estritamente o formulário de cadastro para administradores."""
+# --- PAINEL EXCLUSIVO: GERENCIAR OPERADORES (APENAS ADMIN) ---
+def componente_gerenciar_operadores():
+    """Exibe a lista de operadores ativos e permite criar novos."""
     st.markdown('<h1 class="main-title">GERENCIAMENTO DE OPERADORES</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="sub-title">HGuJP — Registro de Novas Credenciais de Acesso</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title">HGuJP — Controle de Credenciais e Controle de Acessos</p>', unsafe_allow_html=True)
     
-    _, col_central, _ = st.columns([1, 1.5, 1])
-    with col_central:
-        if st.session_state.autenticado and st.session_state.usuario_atual == "admin":
-            with st.form(key="form_cadastro_restrito"):
-                st.markdown("<h3 style='color: #4CAF50; margin-top: 0;'>Registar Novo Operador</h3>", unsafe_allow_html=True)
-                novo_usuario = st.text_input("Definir Nome de Utilizador:", placeholder="Ex: ten.silva")
+    if not (st.session_state.autenticado and st.session_state.usuario_atual == "admin"):
+        st.warning("⚠️ Permissão Negada. A criação e listagem de operadores é restrita ao administrador.")
+        return
+
+    # 1. LISTA DE OPERADORES EXISTENTES
+    st.subheader("👥 Operadores Cadastrados no Sistema")
+    try:
+        usuarios_cadastrados = carregar_usuarios()
+        
+        # Converte o dicionário do JSON para uma tabela visual limpa
+        lista_dados = []
+        for nome_user, info in usuarios_cadastrados.items():
+            lista_dados.append({
+                "Nome de Utilizador": nome_user,
+                "Data de Criação": info.get("criado_em", "N/A")
+            })
+        
+        df_usuarios = pd.DataFrame(lista_dados)
+        st.dataframe(df_usuarios, use_container_width=True)
+    except Exception as e:
+        st.error(f"Erro ao carregar lista de utilizadores: {e}")
+
+    st.markdown('<div class="custom-hr"></div>', unsafe_allow_html=True)
+
+    # 2. BOTÃO NOVO DENTRO DE EXPANDER PARA ADICIONAR OPERADOR
+    with st.expander("➕ Cadastrar Novo Operador / Utilizador"):
+        _, col_central, _ = st.columns([1, 1.5, 1])
+        with col_central:
+            with st.form(key="form_cadastro_operador", clear_on_submit=True):
+                st.markdown("<h4 style='color: #4CAF50; margin-top: 0;'>Dados do Novo Operador</h4>", unsafe_allow_html=True)
+                novo_usuario = st.text_input("Nome de Utilizador:", placeholder="Ex: ten.silva")
                 nova_senha = st.text_input("Definir Palavra-passe:", type="password", placeholder="Mínimo 6 caracteres")
                 confirmar_senha = st.text_input("Confirmar Palavra-passe:", type="password")
-                botao_cadastrar = st.form_submit_button("Criar Conta", use_container_width=True)
+                botao_cadastrar = st.form_submit_button("Confirmar e Salvar Conta", use_container_width=True)
                 
                 if botao_cadastrar:
                     if len(novo_usuario) < 3 or len(nova_senha) < 6:
-                        st.error("O utilizador deve ter 3+ caracteres e a senha 6+ caracteres.")
+                        st.error("O utilizador deve ter pelo menos 3 caracteres e a senha 6+ caracteres.")
                     elif nova_senha != confirmar_senha:
-                        st.error("As palavras-passe não coincidem.")
+                        st.error("As palavras-passe inseridas não coincidem.")
                     else:
                         if salvar_usuario(novo_usuario, nova_senha):
                             registar_log("admin", f"Criou utilizador: {novo_usuario}", "Sucesso")
-                            st.success(f"Utilizador '{novo_usuario}' criado com sucesso!")
+                            st.success(f"Utilizador '{novo_usuario}' registrado com sucesso!")
+                            st.rerun() # Recarrega a página para atualizar a lista acima
                         else:
                             st.error("Este nome de utilizador já se encontra registado no sistema.")
-        else:
-            st.warning("⚠️ Permissão Negada. A criação de novos operadores é restrita exclusivamente ao administrador ('admin').")
 
 
-# --- TELA DE AUTENTICAÇÃO INICIAL (LOGIN E AVISO DE CADASTRO) ---
+# --- TELA DE AUTENTICAÇÃO INICIAL (LOGIN TOTALMENTE LIMPO) ---
 def tela_autenticacao():
-    st.markdown('<div style="text-align: center; margin-top: 20px;">', unsafe_allow_html=True)
+    st.markdown('<div style="text-align: center; margin-top: 50px;">', unsafe_allow_html=True)
     st.markdown('<h1 class="main-title" style="display: inline-block; text-align: left;">HOSPITAL DE GUARNIÇÃO DE JOÃO PESSOA</h1>', unsafe_allow_html=True)
     st.markdown('<p class="sub-title">Diretoria de Saúde — Controlo de Atendimentos Ambulatoriais (HGuJP)</p>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    aba_login, aba_cadastro = st.tabs(["🔑 Aceder ao Sistema", "➕ Criar Utilizador Novo"])
-    
-    with aba_login:
-        _, col_central, _ = st.columns([1, 1.5, 1])
-        with col_central:
-            with st.form(key="form_login"):
-                st.markdown("<h3 style='color: #64B5F6; margin-top: 0;'>Identificação</h3>", unsafe_allow_html=True)
-                usuario = st.text_input("Identidade Militar / Utilizador:", placeholder="Ex: admin")
-                senha = st.text_input("Palavra-passe:", type="password", placeholder="******")
-                botao_login = st.form_submit_button("Entrar no Sistema", use_container_width=True)
-                
-                if botao_login:
-                    usuarios = carregar_usuarios()
-                    if usuario in usuarios and verificar_senha_segura(senha, usuarios[usuario]["senha"]):
-                        st.session_state.autenticado = True
-                        st.session_state.usuario_atual = usuario
-                        registar_log(usuario, "Login no Sistema", "Sucesso")
-                        st.success("Autenticação efetuada com sucesso!")
-                        st.rerun()
-                    else:
-                        registar_log(usuario, "Tentativa de Login", "Falha - Credenciais Incorretas")
-                        st.error("Utilizador ou Palavra-passe incorretos. Acesso negado.")
-
-    with aba_cadastro:
-        _, col_central, _ = st.columns([1, 1.5, 1])
-        with col_central:
-            st.warning("⚠️ Permissão Negada. A criação de novos operadores é restrita exclusivamente ao administrador ('admin') autenticado no sistema.")
-            st.info("💡 Se você possui credenciais de administrador, faça o login na aba ao lado e utilize a opção dedicada '➕ Gerenciar Operadores' que surgirá na barra lateral de navegação.")
+    _, col_central, _ = st.columns([1, 1.3, 1])
+    with col_central:
+        with st.form(key="form_login_unico"):
+            st.markdown("<h3 style='color: #64B5F6; margin-top: 0; text-align: center;'>🔑 Acesso ao Sistema</h3>", unsafe_allow_html=True)
+            usuario = st.text_input("Identidade Militar / Utilizador:", placeholder="Ex: admin")
+            senha = st.text_input("Palavra-passe:", type="password", placeholder="******")
+            botao_login = st.form_submit_button("Entrar no Sistema", use_container_width=True)
+            
+            if botao_login:
+                usuarios = carregar_usuarios()
+                if usuario in usuarios and verificar_senha_segura(senha, usuarios[usuario]["senha"]):
+                    st.session_state.autenticado = True
+                    st.session_state.usuario_atual = usuario
+                    registar_log(usuario, "Login no Sistema", "Sucesso")
+                    st.success("Autenticação efetuada!")
+                    st.rerun()
+                else:
+                    registar_log(usuario, "Tentativa de Login", "Falha - Credenciais Incorretas")
+                    st.error("Utilizador ou Palavra-passe incorretos. Acesso negado.")
 
 
-# --- CONTROLO DE FLUXO PRINCIPAL (EXECUTADO NO FINAL DO ARQUIVO) ---
+# --- CONTROLO DE FLUXO PRINCIPAL ---
 if not st.session_state.autenticado:
     tela_autenticacao()
 else:
@@ -355,4 +370,4 @@ else:
 
     # --- VISÃO 3: GERENCIAR OPERADORES (EXCLUSIVO ADMIN AUTENTICADO) ---
     elif modo_visao == "➕ Gerenciar Operadores":
-        componente_cadastro_usuario()
+        componente_gerenciar_operadores()
