@@ -100,11 +100,7 @@ def salvar_usuario(usuario, senha_pura, perfil_selecionado, ativo_selecionado):
     salvar_banco_usuarios(usuarios)
     return True
 
-def processar_exportacao_csv(dataframe_alvo):
-    registar_log(st.session_state.get("usuario_atual", "admin"), st.session_state.get("perfil_atual", "admin"), "Exportou Dados Ambulatoriais (CSV)", "Sucesso")
-    return dataframe_alvo.to_csv(index=False).encode('utf-8')
-
-# --- ESTADOS DE SESSÃO ---
+# --- INICIALIZAÇÃO DO ESTADO DE SESSÃO ---
 for chave, valor_padrao in [("autenticado", False), ("usuario_atual", None), ("perfil_atual", None), ("ultimo_filtro", {}), ("usuario_em_edicao", None)]:
     if chave not in st.session_state:
         st.session_state[chave] = valor_padrao
@@ -229,7 +225,7 @@ else:
         opcoes_navegacao.extend(["📜 Logs de Auditoria", "➕ Gerenciar Operadores"])
     modo_visao = st.sidebar.radio("Navegação:", opcoes_navegacao)
 
-    # --- PERFORMANCE CACHE ---
+    # --- PERFORMANCE CACHE & ORDENAÇÃO CATEGÓRICA DA FAIXA ETÁRIA ---
     @st.cache_data(ttl=3600)
     def load_data():
         df = pd.read_csv("dados.csv")
@@ -240,9 +236,12 @@ else:
         df.loc[df['Idade_Tratada'] > 115, 'Idade_Tratada'] = None
         
         bins = list(range(0, 121, 10))
-        labels = [f"{i}-{i+9}" for i in bins[:-1]]
-        df['Faixa_Etaria'] = pd.cut(df['Idade_Tratada'], bins=bins, labels=labels, right=False)
+        categorias_ordenadas = [f"{i}-{i+9}" for i in bins[:-1]] + ['Não Informada']
+        
+        df['Faixa_Etaria'] = pd.cut(df['Idade_Tratada'], bins=bins, labels=categorias_ordenadas[:-1], right=False)
         df['Faixa_Etaria'] = df['Faixa_Etaria'].astype(str).replace('nan', 'Não Informada')
+        
+        df['Faixa_Etaria'] = pd.Categorical(df['Faixa_Etaria'], categories=categorias_ordenadas, ordered=True)
         return df
 
     if modo_visao == "📊 Dashboard Ambulatorial":
@@ -292,23 +291,39 @@ else:
                 
                 row2_col1, row2_col2 = st.columns(2)
                 with row2_col1:
-                    st.subheader("📊 Faixa Etária")
+                    st.subheader("📊 Faixa Etária (Crescente)")
                     df_idade = df_filtrado.groupby('Faixa_Etaria', observed=False).size().reset_index(name='Quantidade')
                     st.plotly_chart(aplicar_layout_dark(px.bar(df_idade, x='Faixa_Etaria', y='Quantidade', color_discrete_sequence=['#4CAF50'])), use_container_width=True)
                 with row2_col2:
                     st.subheader("📋 Top 10 Patologias (CID)")
                     df_cid = df_filtrado.groupby(['Código_CID', 'Nome_Doença']).size().reset_index(name='Total').sort_values(by='Total', ascending=False).head(10)
                     st.plotly_chart(aplicar_layout_dark(px.bar(df_cid, x='Total', y='Código_CID', orientation='h', text='Nome_Doença', color_discrete_sequence=['#64B5F6'])), use_container_width=True)
+                
+                # --- NOVA LINHA DE GRÁFICO: ESPECIALIDADES AMBULATORIAIS ---
+                st.markdown('<div class="custom-hr"></div>', unsafe_allow_html=True)
+                row3_col1, _ = st.columns([2, 1])
+                with row3_col1:
+                    st.subheader("🩺 Atendimentos por Especialidade")
+                    df_esp = df_filtrado.groupby('Especialidade_Atendimento').size().reset_index(name='Volume').sort_values(by='Volume', ascending=False)
+                    st.plotly_chart(aplicar_layout_dark(px.bar(df_esp, x='Especialidade_Atendimento', y='Volume', color_discrete_sequence=['#FF9800'], labels={'Especialidade_Atendimento': 'Especialidade'})), use_container_width=True)
             else:
                 st.info("Selecione filtros válidos.")
 
-            # --- EXPORTAÇÃO ---
+            # --- SÓ GERA O CSV SE CLICAR NO BOTÃO ---
+            st.markdown('<div class="custom-hr"></div>', unsafe_allow_html=True)
+            
             df_exibicao = df_filtrado.copy()
             df_exibicao['Idade_Exibição'] = df_exibicao['Idade_Tratada'].apply(lambda x: f"{int(x)}" if pd.notna(x) else "Inválida")
             df_para_download = df_exibicao[['Idade_Exibição', 'Faixa_Etaria', 'Sexo', 'Dia_Atendimento', 'Código_CID', 'Nome_Doença', 'Especialidade_Atendimento', 'Setor_Atendimento']]
             
-            st.download_button(label="📥 Exportar Planilha Filtrada para CSV", data=processar_exportacao_csv(df_para_download), file_name="HGuJP_atendimentos.csv", mime="text/csv", use_container_width=True)
-            st.dataframe(df_para_download, use_container_width=True)
+            st.download_button(
+                label="📥 Exportar Planilha Filtrada para CSV", 
+                data=processar_exportacao_csv(df_para_download), 
+                file_name=f"HGuJP_export_{obter_hora_brasilia().strftime('%Y%m%d_%H%M%S')}.csv", 
+                mime="text/csv", 
+                use_container_width=True
+            )
+            
         except Exception as e:
             st.error(f"Erro: {e}")
 
