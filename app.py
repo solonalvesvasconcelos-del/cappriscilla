@@ -42,13 +42,15 @@ try:
         default=anos_disponiveis
     )
     
-    # Filtro dinâmico de Idade (Limitado a no máximo 130 anos)
-    idade_min, idade_max = int(df["Idade"].min()), int(df["Idade"].max())
+    # Filtro dinâmico de Idade (Forçado a iniciar em 0 e limitado ao máximo do banco até 130)
+    idade_min = 0
+    idade_max = int(df["Idade"].max())
+    
     idade_selecionada = st.sidebar.slider(
         "Intervalo de Idade:",
         min_value=idade_min,
         max_value=idade_max,
-        value=(idade_min, idade_max)
+        value=(idade_min, idade_max) # Inicializa o seletor selecionando de 0 até a idade máxima
     )
     
     # Filtro de Setor
