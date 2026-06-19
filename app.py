@@ -142,25 +142,29 @@ def tela_autenticacao():
     with aba_cadastro:
         _, col_central, _ = st.columns([1, 1.5, 1])
         with col_central:
-            with st.form(key="form_cadastro"):
-                st.markdown("<h3 style='color: #4CAF50; margin-top: 0;'>Registar Novo Operador</h3>", unsafe_allow_html=True)
-                novo_usuario = st.text_input("Definir Nome de Utilizador:", placeholder="Ex: ten.silva")
-                nova_senha = st.text_input("Definir Palavra-passe:", type="password", placeholder="Mínimo 6 caracteres")
-                confirmar_senha = st.text_input("Confirmar Palavra-passe:", type="password")
-                botao_cadastrar = st.form_submit_button("Criar Conta", use_container_width=True)
-                
-                if botao_cadastrar:
-                    if len(novo_usuario) < 3 or len(nova_senha) < 6:
-                        st.error("O utilizador deve ter 3+ caracteres e a senha 6+ caracteres.")
-                    elif nova_senha != confirmar_senha:
-                        st.error("As palavras-passe não coincidem.")
-                    else:
-                        if salvar_usuario(novo_usuario, nova_senha):
-                            operador = st.session_state.usuario_atual if st.session_state.usuario_atual else "Cadastro Inicial"
-                            registar_log(operador, f"Criou utilizador: {novo_usuario}", "Sucesso")
-                            st.success(f"Utilizador '{novo_usuario}' criado com sucesso! Use a aba ao lado para entrar.")
+            # RESTRIÇÃO BLOQUEANTE: Só permite se já estiver logado E se for o usuário 'admin'
+            if st.session_state.autenticado and st.session_state.usuario_atual == "admin":
+                with st.form(key="form_cadastro"):
+                    st.markdown("<h3 style='color: #4CAF50; margin-top: 0;'>Registar Novo Operador</h3>", unsafe_allow_html=True)
+                    novo_usuario = st.text_input("Definir Nome de Utilizador:", placeholder="Ex: ten.silva")
+                    nova_senha = st.text_input("Definir Palavra-passe:", type="password", placeholder="Mínimo 6 caracteres")
+                    confirmar_senha = st.text_input("Confirmar Palavra-passe:", type="password")
+                    botao_cadastrar = st.form_submit_button("Criar Conta", use_container_width=True)
+                    
+                    if botao_cadastrar:
+                        if len(novo_usuario) < 3 or len(nova_senha) < 6:
+                            st.error("O utilizador deve ter 3+ caracteres e a senha 6+ caracteres.")
+                        elif nova_senha != confirmar_senha:
+                            st.error("As palavras-passe não coincidem.")
                         else:
-                            st.error("Este nome de utilizador já se encontra registado no sistema.")
+                            if salvar_usuario(novo_usuario, nova_senha):
+                                registar_log("admin", f"Criou utilizador: {novo_usuario}", "Sucesso")
+                                st.success(f"Utilizador '{novo_usuario}' criado com sucesso!")
+                            else:
+                                st.error("Este nome de utilizador já se encontra registado no sistema.")
+            else:
+                st.warning("⚠️ Permissão Negada. A criação de novos operadores é restrita exclusivamente ao administrador ('admin') autenticado no sistema.")
+                st.info("💡 Se você é o administrador, faça o login na aba anterior e utilize o menu lateral para alternar as visões ou gerenciar o sistema.")
 
 # --- CONTROLO DE FLUXO PRINCIPAL ---
 if not st.session_state.autenticado:
@@ -176,7 +180,12 @@ else:
     st.sidebar.markdown(f"👤 Operador: **{st.session_state.usuario_atual}**")
     st.sidebar.markdown("<div class='custom-hr'></div>", unsafe_allow_html=True)
     
-    modo_visao = st.sidebar.radio("Navegação do Sistema:", ["📊 Dashboard Ambulatorial", "📜 Logs de Auditoria"])
+    # Se for o administrador, ele ganha uma opção dedicada para navegar até a aba de criação
+    opcoes_navegacao = ["📊 Dashboard Ambulatorial", "📜 Logs de Auditoria"]
+    if st.session_state.usuario_atual == "admin":
+        opcoes_navegacao.append("➕ Gerenciar Operadores")
+        
+    modo_visao = st.sidebar.radio("Navegação do Sistema:", opciones_navegacao)
 
     # --- VISÃO 1: DASHBOARD DE SAÚDE ---
     if modo_visao == "📊 Dashboard Ambulatorial":
@@ -271,63 +280,4 @@ else:
                 else:
                     st.info("Nenhum dado encontrado.")
 
-            row2_col1, row2_col2 = st.columns(2)
-
-            with row2_col1:
-                st.subheader("📊 Distribuição por Faixa Etária (Grupos de 10 Anos)")
-                if len(df_filtrado) > 0:
-                    df_idade = df_filtrado.groupby('Faixa_Etaria', observed=False).size().reset_index(name='Quantidade')
-                    df_idade['Faixa_Etaria'] = pd.Categorical(df_idade['Faixa_Etaria'], categories=[f"{i}-{i+9}" for i in range(0, 120, 10)] + ['Não Informada'], ordered=True)
-                    df_idade = df_idade.sort_values('Faixa_Etaria')
-                    fig_idade = px.bar(df_idade, x='Faixa_Etaria', y='Quantidade', labels={'Faixa_Etaria': 'Grupo de Idade', 'Quantidade': 'Pacientes'}, color='Quantidade', color_continuous_scale='YlGnBu')
-                    fig_idade = aplicar_layout_dark(fig_idade)
-                    st.plotly_chart(fig_idade, use_container_width=True)
-                else:
-                    st.info("Nenhum dado encontrado.")
-
-            with row2_col2:
-                st.subheader("📋 Top 10 Patologias Mais Frequentes (Código CID)")
-                if len(df_filtrado) > 0:
-                    df_cid = df_filtrado.groupby(['Código_CID', 'Nome_Doença']).size().reset_index(name='Total').sort_values(by='Total', ascending=False).head(10)
-                    fig_cid = px.bar(df_cid, x='Total', y='Código_CID', orientation='h', text='Nome_Doença', labels={'Código_CID': 'Código CID', 'Total': 'Casos'}, color='Total', color_continuous_scale='Blues')
-                    fig_cid.update_layout(yaxis={'categoryorder':'total ascending'})
-                    fig_cid = aplicar_layout_dark(fig_cid)
-                    st.plotly_chart(fig_cid, use_container_width=True)
-                else:
-                    st.info("Nenhum dado encontrado.")
-
-            st.markdown('<div class="custom-hr"></div>', unsafe_allow_html=True)
-            st.subheader("🗃️ Registro de Dados Filtrados")
-            df_exibicao = df_filtrado.copy()
-            df_exibicao['Idade_Exibição'] = df_exibicao['Idade_Tratada'].apply(lambda x: f"{int(x)}" if pd.notna(x) else "Inválida (>115)")
-            st.dataframe(df_exibicao[['Idade_Exibição', 'Faixa_Etaria', 'Sexo', 'Dia_Atendimento', 'Código_CID', 'Nome_Doença', 'Especialidade_Atendimento', 'Setor_Atendimento']], use_container_width=True)
-
-        except Exception as e:
-            st.error(f"Erro ao processar os dados. Detalhes: {e}")
-
-    # --- VISÃO 2: LOGS DE AUDITORIA ---
-    elif modo_visao == "📜 Logs de Auditoria":
-        st.markdown('<h1 class="main-title">LOGS DE AUDITORIA DO SISTEMA</h1>', unsafe_allow_html=True)
-        st.markdown('<p class="sub-title">HGuJP — Histórico de Acessos e Ações de Utilizadores</p>', unsafe_allow_html=True)
-        
-        try:
-            df_logs = pd.read_csv(LOG_FILE)
-            df_logs = df_logs.iloc[::-1]
-            
-            c1, c2 = st.columns(2)
-            c1.metric("Total de Eventos Gravados", len(df_logs))
-            c2.metric("Falhas de Login Detetadas", len(df_logs[df_logs["Status"].str.contains("Falha", na=False)]))
-            
-            st.markdown('<div class="custom-hr"></div>', unsafe_allow_html=True)
-            st.dataframe(df_logs, use_container_width=True)
-            
-            if st.session_state.usuario_atual == "admin":
-                if st.button("🚨 Limpar Histórico de Logs", use_container_width=True):
-                    df_vazio = pd.DataFrame(columns=["Data_Hora", "Utilizador", "Evento", "Status"])
-                    df_vazio.to_csv(LOG_FILE, index=False)
-                    registar_log("admin", "Limpeza de Logs de Auditoria", "Sucesso")
-                    st.success("Histórico limpo!")
-                    st.rerun()
-                    
-        except Exception as e:
-            st.error(f"Erro ao ler o ficheiro de auditoria: {e}")
+            row2_col
