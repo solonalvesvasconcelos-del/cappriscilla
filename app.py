@@ -280,4 +280,68 @@ else:
                 else:
                     st.info("Nenhum dado encontrado.")
 
-            row2_col
+            row2_col1, row2_col2 = st.columns(2)
+
+            with row2_col1:
+                st.subheader("📊 Distribuição por Faixa Etária (Grupos de 10 Anos)")
+                if len(df_filtrado) > 0:
+                    df_idade = df_filtrado.groupby('Faixa_Etaria', observed=False).size().reset_index(name='Quantidade')
+                    df_idade['Faixa_Etaria'] = pd.Categorical(df_idade['Faixa_Etaria'], categories=[f"{i}-{i+9}" for i in range(0, 120, 10)] + ['Não Informada'], ordered=True)
+                    df_idade = df_idade.sort_values('Faixa_Etaria')
+                    fig_idade = px.bar(df_idade, x='Faixa_Etaria', y='Quantidade', labels={'Faixa_Etaria': 'Grupo de Idade', 'Quantidade': 'Pacientes'}, color='Quantidade', color_continuous_scale='YlGnBu')
+                    fig_idade = aplicar_layout_dark(fig_idade)
+                    st.plotly_chart(fig_idade, use_container_width=True)
+                else:
+                    st.info("Nenhum dado encontrado.")
+
+            with row2_col2:
+                st.subheader("📋 Top 10 Patologias Mais Frequentes (Código CID)")
+                if len(df_filtrado) > 0:
+                    df_cid = df_filtrado.groupby(['Código_CID', 'Nome_Doença']).size().reset_index(name='Total').sort_values(by='Total', ascending=False).head(10)
+                    fig_cid = px.bar(df_cid, x='Total', y='Código_CID', orientation='h', text='Nome_Doença', labels={'Código_CID': 'Código CID', 'Total': 'Casos'}, color='Total', color_continuous_scale='Blues')
+                    fig_cid.update_layout(yaxis={'categoryorder':'total ascending'})
+                    fig_cid = aplicar_layout_dark(fig_cid)
+                    st.plotly_chart(fig_cid, use_container_width=True)
+                else:
+                    st.info("Nenhum dado encontrado.")
+
+            st.markdown('<div class="custom-hr"></div>', unsafe_allow_html=True)
+            st.subheader("🗃️ Registro de Dados Filtrados")
+            df_exibicao = df_filtrado.copy()
+            df_exibicao['Idade_Exibição'] = df_exibicao['Idade_Tratada'].apply(lambda x: f"{int(x)}" if pd.notna(x) else "Inválida (>115)")
+            st.dataframe(df_exibicao[['Idade_Exibição', 'Faixa_Etaria', 'Sexo', 'Dia_Atendimento', 'Código_CID', 'Nome_Doença', 'Especialidade_Atendimento', 'Setor_Atendimento']], use_container_width=True)
+
+        except Exception as e:
+            st.error(f"Erro ao processar os dados. Detalhes: {e}")
+
+    # --- VISÃO 2: LOGS DE AUDITORIA ---
+    elif modo_visao == "📜 Logs de Auditoria":
+        st.markdown('<h1 class="main-title">LOGS DE AUDITORIA DO SISTEMA</h1>', unsafe_allow_html=True)
+        st.markdown('<p class="sub-title">HGuJP — Histórico de Acessos e Ações de Utilizadores</p>', unsafe_allow_html=True)
+        
+        try:
+            df_logs = pd.read_csv(LOG_FILE)
+            df_logs = df_logs.iloc[::-1]
+            
+            c1, c2 = st.columns(2)
+            c1.metric("Total de Eventos Gravados", len(df_logs))
+            c2.metric("Falhas de Login Detetadas", len(df_logs[df_logs["Status"].str.contains("Falha", na=False)]))
+            
+            st.markdown('<div class="custom-hr"></div>', unsafe_allow_html=True)
+            st.dataframe(df_logs, use_container_width=True)
+            
+            if st.session_state.usuario_atual == "admin":
+                if st.button("🚨 Limpar Histórico de Logs", use_container_width=True):
+                    df_vazio = pd.DataFrame(columns=["Data_Hora", "Utilizador", "Evento", "Status"])
+                    df_vazio.to_csv(LOG_FILE, index=False)
+                    registar_log("admin", "Limpeza de Logs de Auditoria", "Sucesso")
+                    st.success("Histórico limpo!")
+                    st.rerun()
+                    
+        except Exception as e:
+            st.error(f"Erro ao ler o ficheiro de auditoria: {e}")
+
+    # --- VISÃO 3: GERENCIAR OPERADORES (EXCLUSIVO ADMIN AUTENTICADO) ---
+    elif modo_visao == "➕ Gerenciar Operadores":
+        # Chama a função que contém a aba de cadastro validada
+        tela_autenticacao()
