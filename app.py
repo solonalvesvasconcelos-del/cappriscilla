@@ -104,10 +104,10 @@ def registar_log(usuario, perfil, evento, status):
     """Regista um evento de auditoria detalhado no ficheiro CSV."""
     novo_log = {
         "Data_Hora": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "Utilizador": usuario if usuario else "ANÓNIMO",
-        "Perfil": perfil if perfil else "N/A",
-        "Evento": evento,
-        "Status": status
+        "Utilizador": str(usuario) if usuario else "ANÓNIMO",
+        "Perfil": str(perfil) if perfil else "N/A",
+        "Evento": str(evento),
+        "Status": str(status)
     }
     df_novo = pd.DataFrame([novo_log])
     df_novo.to_csv(LOG_FILE, mode='a', header=not os.path.exists(LOG_FILE), index=False)
@@ -143,9 +143,7 @@ if "usuario_em_edicao" not in st.session_state:
 # --- INJEÇÃO DE IDENTIDADE VISUAL COM REMOÇÃO DE MENUS NATIVOS ---
 estilo_css = """
 <style>
-    /* Remove o menu lateral de navegação nativo do Streamlit */
     [data-testid="stSidebarNav"] { display: none !important; }
-    
     .stApp { background-color: #0E1117; color: #FAFAFA; }
     .main-title {
         color: #FFFFFF; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-weight: 700;
@@ -187,14 +185,14 @@ def componente_gerenciar_operadores():
         
         for nome_user, info in usuarios_cadastrados.items():
             c_user, c_perf, c_status, c_criacao, c_validade, c_acao = st.columns([2, 1.5, 1, 2, 2, 1])
-            c_user.write(nome_user)
-            c_perf.write(info.get("perfil", "viewer").upper())
+            c_user.write(str(nome_user))
+            c_perf.write(str(info.get("perfil", "viewer")).upper())
             
             is_ativo = info.get("ativo", True)
             c_status.write("🟢 Ativo" if is_ativo else "🔴 Inativo")
             
-            c_criacao.write(info.get("criado_em", "N/A"))
-            c_validade.write(info.get("validade_ate", "N/A"))
+            c_criacao.write(str(info.get("criado_em", "N/A")))
+            c_validade.write(str(info.get("validade_ate", "N/A")))
             
             if c_acao.button("📝 Editar", key=f"btn_edit_{nome_user}", use_container_width=True):
                 st.session_state.usuario_em_edicao = nome_user
@@ -320,7 +318,7 @@ def tela_autenticacao():
 
 
 # --- CONTROLO DE FLUXO PRINCIPAL ---
-if not st.session_state.autenticado:
+if not st.session_state.get("autenticado", False):
     tela_autenticacao()
 else:
     if st.sidebar.button("🔒 Terminar Sessão (Logout)", use_container_width=True):
@@ -331,7 +329,11 @@ else:
         st.session_state.usuario_em_edicao = None
         st.rerun()
 
-    st.sidebar.markdown(f"👤 Operador: **{st.session_state.usuario_atual}** ({st.session_state.perfil_atual.upper()})")
+    # Sanitiza a exibição para prevenir strings nulas ou erráticas na interface
+    u_display = str(st.session_state.get("usuario_atual", "admin"))
+    p_display = str(st.session_state.get("perfil_atual", "ADMIN")).upper()
+
+    st.sidebar.markdown(f"👤 Operador: **{u_display}** ({p_display})")
     st.sidebar.markdown("<div class='custom-hr'></div>", unsafe_allow_html=True)
     
     opcoes_navegacao = ["📊 Dashboard Ambulatorial"]
@@ -411,7 +413,7 @@ else:
             cond_nula = df_filtrado["Idade_Tratada"].isna()
             df_filtrado = df_filtrado[cond_valida | cond_nula]
 
-            # --- CARDS DE MÉTRICAS DIRETOS (SEM BOTÕES DE DETALHES ANTERIORES) ---
+            # --- CARDS DE MÉTRICAS DIRETOS ---
             col1, col2, col3 = st.columns(3)
             col1.metric("Total de Atendimentos", f"{len(df_filtrado)}")
             idades_validas = df_filtrado['Idade_Tratada'].dropna()
