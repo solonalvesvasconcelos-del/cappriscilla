@@ -242,7 +242,10 @@ def componente_gerenciar_operadores():
                 validade_edit_dt = st.date_input("Nova Data de Validade:", value=data_val_atual.date())
             
             c_b1, c_b2 = st.columns(2)
-            if c_b1.form_submit_button("Salvar Alterações", use_container_width=True):
+            submit_edicao = c_b1.form_submit_button("Salvar Alterações", use_container_width=True)
+            cancel_edicao = c_b2.form_submit_button("Cancelar Edição", use_container_width=True)
+            
+            if submit_edicao:
                 usuarios_atualizados = carregar_usuarios()
                 usuarios_atualizados[u_edit]["perfil"] = perfil_edit
                 usuarios_atualizados[u_edit]["ativo"] = ativo_edit
@@ -266,15 +269,19 @@ def componente_gerenciar_operadores():
                 st.session_state.usuario_em_edicao = None
                 st.rerun()
                 
-            if c_b2.form_submit_button("Cancelar Edição", use_container_width=True):
+            if cancel_edicao:
                 st.session_state.usuario_em_edicao = None
                 st.rerun()
 
     st.markdown('<div class="custom-hr"></div>', unsafe_allow_html=True)
 
+    # --- CORREÇÃO DO LOG DE CADASTRO ---
     with st.expander("➕ Cadastrar Novo Operador / Utilizador"):
         _, col_central, _ = st.columns([1, 1.5, 1])
         with col_central:
+            # Variáveis para capturar o resultado fora do formulário
+            cadastrar_usuario_acao = False
+            
             with st.form(key="form_cadastro_operador", clear_on_submit=True):
                 st.markdown("<h4 style='color: #4CAF50; margin-top: 0;'>Dados do Novo Operador</h4>", unsafe_allow_html=True)
                 novo_usuario = st.text_input("Nome de Utilizador:", placeholder="Ex: ten.silva")
@@ -290,12 +297,16 @@ def componente_gerenciar_operadores():
                     elif nova_senha != confirmar_senha:
                         st.error("As passwords não coincidem.")
                     else:
-                        if salvar_usuario(novo_usuario, nova_senha, perfil_novo, ativo_novo):
-                            registar_log(st.session_state.usuario_atual, st.session_state.perfil_atual, f"Criou utilizador '{novo_usuario}'", "Sucesso")
-                            st.success(f"Utilizador '{novo_usuario}' registrado!")
-                            st.rerun()
-                        else:
-                            st.error("Este utilizador já existe.")
+                        cadastrar_usuario_acao = True
+
+            # Processamento seguro executado fora do escopo do st.form
+            if cadastrar_usuario_acao:
+                if salvar_usuario(novo_usuario, nova_senha, perfil_novo, ativo_novo):
+                    registar_log(st.session_state.usuario_atual, st.session_state.perfil_atual, f"Criou utilizador '{novo_usuario}'", "Sucesso")
+                    st.success(f"Utilizador '{novo_usuario}' registrado com sucesso!")
+                    st.rerun()
+                else:
+                    st.error("Este utilizador já existe no sistema.")
 
 
 # --- TELA DE AUTENTICAÇÃO INICIAL ---
