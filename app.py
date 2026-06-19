@@ -24,6 +24,20 @@ def obter_hora_brasilia():
     fuso_brasilia = timezone(timedelta(hours=-3))
     return datetime.now(timezone.utc).astimezone(fuso_brasilia).replace(tzinfo=None)
 
+# --- FUNÇÃO DE AUXÍLIO DE DESIGN GRÁFICO (TEMA PLOTLY DARK) ---
+def aplicar_layout_dark(fig):
+    """Aplica o tema escuro institucional nos gráficos do Plotly."""
+    fig.update_layout(
+        plot_bgcolor='rgba(0,0,0,0)', 
+        paper_bgcolor='rgba(0,0,0,0)',
+        font_color='#FAFAFA', 
+        title_font_color='#FAFAFA', 
+        legend_font_color='#FAFAFA'
+    )
+    fig.update_xaxes(gridcolor='#262730', zerolinecolor='#262730')
+    fig.update_yaxes(gridcolor='#262730', zerolinecolor='#262730')
+    return fig
+
 # --- FUNÇÕES AVANÇADAS DE CRIPTOGRAFIA (SALT + PBKDF2) ---
 def gerar_senha_segura(senha_pura):
     salt = secrets.token_bytes(16)
@@ -39,7 +53,7 @@ def verificar_senha_segura(senha_pura, senha_armazenada):
     except Exception:
         return False
 
-# --- FUNÇÕES SEGUIDAS DE I/O (CACHE E OTIMIZAÇÃO DE DISCO) ---
+# --- FUNÇÕES DE I/O OTIMIZADAS ---
 def carregar_usuarios():
     with open(DB_USERS, "r") as f:
         return json.load(f)
@@ -49,7 +63,6 @@ def salvar_banco_usuarios(dados_usuarios):
         json.dump(dados_usuarios, f)
 
 def registar_log(usuario, perfil, evento, status):
-    """Regista o evento direto no fim do arquivo sem ler o histórico antes (Alta Performance)."""
     novo_log = {
         "Data_Hora": obter_hora_brasilia().strftime("%Y-%m-%d %H:%M:%S"),
         "Utilizador": str(usuario) if usuario else "ANÓNIMO",
@@ -58,10 +71,9 @@ def registar_log(usuario, perfil, evento, status):
         "Status": str(status)
     }
     df_novo = pd.DataFrame([novo_log])
-    # mode='a' grava direto sem carregar o CSV na memória RAM
     df_novo.to_csv(LOG_FILE, mode='a', header=not os.path.exists(LOG_FILE), index=False)
 
-# --- INICIALIZAÇÃO CONTROLADA ---
+# --- INICIALIZAÇÃO CONTROLADA DE BASES ---
 if not os.path.exists(DB_USERS):
     admin_senha_cripto = gerar_senha_segura("hgujp2026")
     agora = obter_hora_brasilia()
@@ -97,7 +109,7 @@ for chave, valor_padrao in [("autenticado", False), ("usuario_atual", None), ("p
     if chave not in st.session_state:
         st.session_state[chave] = valor_padrao
 
-# --- CSS INJECTED ---
+# --- INJEÇÃO DE IDENTIDADE VISUAL ---
 st.markdown("""
 <style>
     [data-testid="stSidebarNav"] { display: none !important; }
@@ -109,7 +121,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- COMPONENTE DE GERENCIAMENTO ---
+# --- PAINEL: GERENCIAR OPERADORES ---
 def componente_gerenciar_operadores():
     st.markdown('<h1 class="main-title">GERENCIAMENTO DE OPERADORES</h1>', unsafe_allow_html=True)
     if st.session_state.perfil_atual != "admin":
@@ -217,8 +229,8 @@ else:
         opcoes_navegacao.extend(["📜 Logs de Auditoria", "➕ Gerenciar Operadores"])
     modo_visao = st.sidebar.radio("Navegação:", opcoes_navegacao)
 
-    # --- PERFORMANCE: CARREGAMENTO DE DADOS COM PROCESSAMENTO VETORIZADO ---
-    @st.cache_data(ttl=3600)  # Mantém os dados em cache por 1 hora para máxima velocidade
+    # --- PERFORMANCE CACHE ---
+    @st.cache_data(ttl=3600)
     def load_data():
         df = pd.read_csv("dados.csv")
         df['Dia_Atendimento'] = pd.to_datetime(df['Dia_Atendimento'])
@@ -246,7 +258,6 @@ else:
             especialidades_selecionadas = st.sidebar.multiselect("Especialidade:", options=sorted(df["Especialidade_Atendimento"].unique()))
             sexo_selecionado = st.sidebar.multiselect("Sexo:", options=df["Sexo"].unique(), default=df["Sexo"].unique())
 
-            # PERFORMANCE: Filtro vetorizado rápido usando dicionário compilado
             df_filtrado = df.copy()
             if busca_cid_doenca:
                 df_filtrado = df_filtrado[df_filtrado["Código_CID"].str.contains(busca_cid_doenca, case=False, na=False) | df_filtrado["Nome_Doença"].str.contains(busca_cid_doenca, case=False, na=False)]
@@ -254,14 +265,14 @@ else:
                 df_filtrado = df_filtrado[df_filtrado["Ref_Ano"].isin(anos_selecionados)]
             if setores_selecionados:
                 df_filtrado = df_filtrado[df_filtrado["Setor_Atendimento"].isin(setores_selecionados)]
-            if Harbor := especialidades_selecionadas:
+            if especialidades_selecionadas:
                 df_filtrado = df_filtrado[df_filtrado["Especialidade_Atendimento"].isin(especialidades_selecionadas)]
             if sexo_selecionado:
                 df_filtrado = df_filtrado[df_filtrado["Sexo"].isin(sexo_selecionado)]
             
             df_filtrado = df_filtrado[(df_filtrado["Idade_Tratada"].between(idade_selecionada[0], idade_selecionada[1])) | (df_filtrado["Idade_Tratada"].isna())]
 
-            # --- RENDIMENTO VISUAL (CARDS) ---
+            # --- RENDIMENTO VISUAL ---
             col1, col2, col3 = st.columns(3)
             col1.metric("Total de Atendimentos", f"{len(df_filtrado)}")
             col2.metric("Média de Idade", f"{df_filtrado['Idade_Tratada'].dropna().mean():.1f} anos" if len(df_filtrado) > 0 else "N/A")
@@ -269,20 +280,23 @@ else:
 
             st.markdown('<div class="custom-hr"></div>', unsafe_allow_html=True)
 
-            # --- GRÁFICOS INTERATIVOS OTIMIZADOS ---
-            row1_col1, row1_col2 = st.columns(2)
             if len(df_filtrado) > 0:
+                row1_col1, row1_col2 = st.columns(2)
                 with row1_col1:
+                    st.subheader("📈 Atendimentos por Mês")
                     df_mes = df_filtrado.groupby('Ano_Mes').size().reset_index(name='Atendimentos')
                     st.plotly_chart(aplicar_layout_dark(px.bar(df_mes, x='Ano_Mes', y='Atendimentos', color_discrete_sequence=['#1E88E5'])), use_container_width=True)
                 with row1_col2:
+                    st.subheader("👥 Distribuição por Sexo")
                     st.plotly_chart(aplicar_layout_dark(px.pie(df_filtrado, names='Sexo', hole=0.4, color_discrete_sequence=['#1E88E5', '#4CAF50'])), use_container_width=True)
                 
                 row2_col1, row2_col2 = st.columns(2)
                 with row2_col1:
+                    st.subheader("📊 Faixa Etária")
                     df_idade = df_filtrado.groupby('Faixa_Etaria', observed=False).size().reset_index(name='Quantidade')
                     st.plotly_chart(aplicar_layout_dark(px.bar(df_idade, x='Faixa_Etaria', y='Quantidade', color_discrete_sequence=['#4CAF50'])), use_container_width=True)
                 with row2_col2:
+                    st.subheader("📋 Top 10 Patologias (CID)")
                     df_cid = df_filtrado.groupby(['Código_CID', 'Nome_Doença']).size().reset_index(name='Total').sort_values(by='Total', ascending=False).head(10)
                     st.plotly_chart(aplicar_layout_dark(px.bar(df_cid, x='Total', y='Código_CID', orientation='h', text='Nome_Doença', color_discrete_sequence=['#64B5F6'])), use_container_width=True)
             else:
