@@ -391,4 +391,42 @@ else:
             st.markdown('<div class="custom-hr"></div>', unsafe_allow_html=True)
             st.subheader("🗃️ Registro de Dados Filtrados")
             
-            if st.button("📥 Exportar Planilha Filtrada para CSV", use_container_width=True
+            if st.button("📥 Exportar Planilha Filtrada para CSV", use_container_width=True):
+                registar_log(st.session_state.usuario_atual, st.session_state.perfil_atual, "Exportou Dados Ambulatoriais (CSV)", "Sucesso")
+                
+            df_exibicao = df_filtrado.copy()
+            df_exibicao['Idade_Exibição'] = df_exibicao['Idade_Tratada'].apply(lambda x: f"{int(x)}" if pd.notna(x) else "Inválida (>115)")
+            st.dataframe(df_exibicao[['Idade_Exibição', 'Faixa_Etaria', 'Sexo', 'Dia_Atendimento', 'Código_CID', 'Nome_Doença', 'Especialidade_Atendimento', 'Setor_Atendimento']], use_container_width=True)
+
+        except Exception as e:
+            st.error(f"Erro ao processar os dados. Detalhes: {e}")
+
+    # --- VISÃO 2: LOGS DE AUDITORIA (RESTRITO AO ADMIN) ---
+    elif modo_visao == "📜 Logs de Auditoria" and st.session_state.perfil_atual == "admin":
+        st.markdown('<h1 class="main-title">LOGS DE AUDITORIA DO SISTEMA</h1>', unsafe_allow_html=True)
+        st.markdown('<p class="sub-title">HGuJP — Histórico de Acessos, Cliques, Filtros e Ações de Utilizadores</p>', unsafe_allow_html=True)
+        
+        try:
+            df_logs = pd.read_csv(LOG_FILE)
+            df_logs = df_logs.iloc[::-1]
+            
+            c1, c2 = st.columns(2)
+            c1.metric("Total de Eventos Gravados", len(df_logs))
+            c2.metric("Falhas de Login Detetadas", len(df_logs[df_logs["Status"].str.contains("Falha", na=False)]))
+            
+            st.markdown('<div class="custom-hr"></div>', unsafe_allow_html=True)
+            st.dataframe(df_logs, use_container_width=True)
+            
+            if st.button("🚨 Limpar Histórico de Logs", use_container_width=True):
+                df_vazio = pd.DataFrame(columns=["Data_Hora", "Utilizador", "Perfil", "Evento", "Status"])
+                df_vazio.to_csv(LOG_FILE, index=False)
+                registar_log("admin", "admin", "Limpeza de Logs de Auditoria", "Sucesso")
+                st.success("Histórico limpo!")
+                st.rerun()
+                    
+        except Exception as e:
+            st.error(f"Erro ao ler o ficheiro de auditoria: {e}")
+
+    # --- VISÃO 3: GERENCIAR OPERADORES (RESTRITO AO ADMIN) ---
+    elif modo_visao == "➕ Gerenciar Operadores" and st.session_state.perfil_atual == "admin":
+        componente_gerenciar_operadores()
