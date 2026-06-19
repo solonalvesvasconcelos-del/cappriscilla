@@ -110,31 +110,4 @@ def load_data():
     df.loc[df['Idade_Tratada'] > 115, 'Idade_Tratada'] = None
     
     bins = list(range(0, 121, 10))
-    labels = [f"{i}-{i+9}" for i in bins[:-1]]
-    df['Faixa_Etaria'] = pd.cut(df['Idade_Tratada'], bins=bins, labels=labels, right=False)
-    df['Faixa_Etaria'] = df['Faixa_Etaria'].astype(str).replace('nan', 'Não Informada')
-    return df
-
-try:
-    df = load_data()
-
-    # --- BARRA LATERAL (FILTROS) ---
-    st.sidebar.markdown("<h3 style='color: #64B5F6;'>Filtros de Pesquisa</h3>", unsafe_allow_html=True)
-    
-    anos_disponiveis = sorted(df["Ano"].unique(), reverse=True)
-    anos_selecionados = st.sidebar.multiselect("Selecione o Ano:", options=anos_disponiveis, default=anos_disponiveis)
-    
-    idade_min, idade_max = 0, 115
-    idade_selecionada = st.sidebar.slider("Intervalo de Idade Válida:", min_value=idade_min, max_value=idade_max, value=(idade_min, idade_max))
-    
-    setores_disponiveis = sorted(df["Setor_Atendimento"].dropna().unique())
-    setores_selecionados = st.sidebar.multiselect("Selecione o Setor:", options=setores_disponiveis, default=setores_disponiveis)
-    
-    especialidades_disponiveis = sorted(df["Especialidade_Atendimento"].unique())
-    especialidades_selecionadas = st.sidebar.multiselect("Selecione a Especialidade:", options=especialidades_disponiveis, default=especialidades_disponiveis)
-    
-    sexo_selecionado = st.sidebar.multiselect("Selecione o Sexo:", options=df["Sexo"].unique(), default=df["Sexo"].unique())
-
-    df_filtrado = df[
-        (df["Ano"].isin(anos_selecionados)) &
-        (df
+    labels =
