@@ -285,10 +285,10 @@ def componente_gerenciar_operadores():
 
 # --- TELA DE AUTENTICAÇÃO INICIAL ---
 def tela_autenticacao():
-    st.markdown('<div style="text-align: center; margin-top: 50px;">', unsafe_allow_html=True)
-    st.markdown('<h1 class="main-title" style="display: inline-block; text-align: left;">HOSPITAL DE GUARNIÇÃO DE JOÃO PESSOA</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="sub-title">Diretoria de Saúde — Controlo de Atendimentos Ambulatoriais (HGuJP)</p>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+   # st.markdown('<div style="text-align: center; margin-top: 50px;">', unsafe_allow_html=True)
+    #st.markdown('<h1 class="main-title" style="display: inline-block; text-align: left;">HOSPITAL DE GUARNIÇÃO DE JOÃO PESSOA</h1>', unsafe_allow_html=True)
+    #st.markdown('<p class="sub-title">Diretoria de Saúde — Controlo de Atendimentos Ambulatoriais (HGuJP)</p>', unsafe_allow_html=True)
+    #st.markdown('</div>', unsafe_allow_html=True)
 
     _, col_central, _ = st.columns([1, 1.3, 1])
     with col_central:
