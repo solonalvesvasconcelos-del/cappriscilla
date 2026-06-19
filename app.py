@@ -28,7 +28,7 @@ def gerar_senha_segura(senha_pura):
         salt, 
         100000
     )
-    return salt.hex() + ":" + senha_hash.hex()
+    return salt.hex() + ":" + senate_hash.hex() if 'senate_hash' in locals() else salt.hex() + ":" + senha_hash.hex()
 
 def verificar_senha_segura(senha_pura, senha_armazenada):
     """Extrai o salt e valida se a senha digitada bate com o registro de forma segura."""
@@ -109,7 +109,39 @@ estilo_css = """
 """
 st.markdown(estilo_css, unsafe_allow_html=True)
 
-# --- TELA DE AUTENTICAÇÃO E CADASTRO ---
+
+# --- SUB-ROTINA: FORMULÁRIO EXCLUSIVO DE CADASTRO ---
+def componente_cadastro_usuario():
+    """Renderiza estritamente o formulário de cadastro para administradores."""
+    st.markdown('<h1 class="main-title">GERENCIAMENTO DE OPERADORES</h1>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title">HGuJP — Registro de Novas Credenciais de Acesso</p>', unsafe_allow_html=True)
+    
+    _, col_central, _ = st.columns([1, 1.5, 1])
+    with col_central:
+        if st.session_state.autenticado and st.session_state.usuario_atual == "admin":
+            with st.form(key="form_cadastro_restrito"):
+                st.markdown("<h3 style='color: #4CAF50; margin-top: 0;'>Registar Novo Operador</h3>", unsafe_allow_html=True)
+                novo_usuario = st.text_input("Definir Nome de Utilizador:", placeholder="Ex: ten.silva")
+                nova_senha = st.text_input("Definir Palavra-passe:", type="password", placeholder="Mínimo 6 caracteres")
+                confirmar_senha = st.text_input("Confirmar Palavra-passe:", type="password")
+                botao_cadastrar = st.form_submit_button("Criar Conta", use_container_width=True)
+                
+                if botao_cadastrar:
+                    if len(novo_usuario) < 3 or len(nova_senha) < 6:
+                        st.error("O utilizador deve ter 3+ caracteres e a senha 6+ caracteres.")
+                    elif nova_senha != confirmar_senha:
+                        st.error("As palavras-passe não coincidem.")
+                    else:
+                        if salvar_usuario(novo_usuario, nova_senha):
+                            registar_log("admin", f"Criou utilizador: {novo_usuario}", "Sucesso")
+                            st.success(f"Utilizador '{novo_usuario}' criado com sucesso!")
+                        else:
+                            st.error("Este nome de utilizador já se encontra registado no sistema.")
+        else:
+            st.warning("⚠️ Permissão Negada. A criação de novos operadores é restrita exclusivamente ao administrador ('admin').")
+
+
+# --- TELA DE AUTENTICAÇÃO INICIAL (LOGIN E AVISO DE CADASTRO) ---
 def tela_autenticacao():
     st.markdown('<div style="text-align: center; margin-top: 20px;">', unsafe_allow_html=True)
     st.markdown('<h1 class="main-title" style="display: inline-block; text-align: left;">HOSPITAL DE GUARNIÇÃO DE JOÃO PESSOA</h1>', unsafe_allow_html=True)
@@ -123,7 +155,7 @@ def tela_autenticacao():
         with col_central:
             with st.form(key="form_login"):
                 st.markdown("<h3 style='color: #64B5F6; margin-top: 0;'>Identificação</h3>", unsafe_allow_html=True)
-                usuario = st.text_input("Identidade Militar / Utilizador:", placeholder="Ex: sgt.solon")
+                usuario = st.text_input("Identidade Militar / Utilizador:", placeholder="Ex: admin")
                 senha = st.text_input("Palavra-passe:", type="password", placeholder="******")
                 botao_login = st.form_submit_button("Entrar no Sistema", use_container_width=True)
                 
@@ -142,31 +174,11 @@ def tela_autenticacao():
     with aba_cadastro:
         _, col_central, _ = st.columns([1, 1.5, 1])
         with col_central:
-            # RESTRIÇÃO BLOQUEANTE: Só permite se já estiver logado E se for o usuário 'admin'
-            if st.session_state.autenticado and st.session_state.usuario_atual == "admin":
-                with st.form(key="form_cadastro"):
-                    st.markdown("<h3 style='color: #4CAF50; margin-top: 0;'>Registar Novo Operador</h3>", unsafe_allow_html=True)
-                    novo_usuario = st.text_input("Definir Nome de Utilizador:", placeholder="Ex: ten.silva")
-                    nova_senha = st.text_input("Definir Palavra-passe:", type="password", placeholder="Mínimo 6 caracteres")
-                    confirmar_senha = st.text_input("Confirmar Palavra-passe:", type="password")
-                    botao_cadastrar = st.form_submit_button("Criar Conta", use_container_width=True)
-                    
-                    if botao_cadastrar:
-                        if len(novo_usuario) < 3 or len(nova_senha) < 6:
-                            st.error("O utilizador deve ter 3+ caracteres e a senha 6+ caracteres.")
-                        elif nova_senha != confirmar_senha:
-                            st.error("As palavras-passe não coincidem.")
-                        else:
-                            if salvar_usuario(novo_usuario, nova_senha):
-                                registar_log("admin", f"Criou utilizador: {novo_usuario}", "Sucesso")
-                                st.success(f"Utilizador '{novo_usuario}' criado com sucesso!")
-                            else:
-                                st.error("Este nome de utilizador já se encontra registado no sistema.")
-            else:
-                st.warning("⚠️ Permissão Negada. A criação de novos operadores é restrita exclusivamente ao administrador ('admin') autenticado no sistema.")
-                st.info("💡 Se você é o administrador, faça o login na aba anterior e utilize o menu lateral para alternar as visões ou gerenciar o sistema.")
+            st.warning("⚠️ Permissão Negada. A criação de novos operadores é restrita exclusivamente ao administrador ('admin') autenticado no sistema.")
+            st.info("💡 Se você possui credenciais de administrador, faça o login na aba ao lado e utilize a opção dedicada '➕ Gerenciar Operadores' que surgirá na barra lateral de navegação.")
 
-# --- CONTROLO DE FLUXO PRINCIPAL ---
+
+# --- CONTROLO DE FLUXO PRINCIPAL (EXECUTADO NO FINAL DO ARQUIVO) ---
 if not st.session_state.autenticado:
     tela_autenticacao()
 else:
@@ -180,12 +192,12 @@ else:
     st.sidebar.markdown(f"👤 Operador: **{st.session_state.usuario_atual}**")
     st.sidebar.markdown("<div class='custom-hr'></div>", unsafe_allow_html=True)
     
-    # Se for o administrador, ele ganha uma opção dedicada para navegar até a aba de criação
+    # Construção dinâmica das opções do menu baseado no perfil logado
     opcoes_navegacao = ["📊 Dashboard Ambulatorial", "📜 Logs de Auditoria"]
     if st.session_state.usuario_atual == "admin":
         opcoes_navegacao.append("➕ Gerenciar Operadores")
         
-    modo_visao = st.sidebar.radio("Navegação do Sistema:", opciones_navegacao)
+    modo_visao = st.sidebar.radio("Navegação do Sistema:", opcoes_navegacao)
 
     # --- VISÃO 1: DASHBOARD DE SAÚDE ---
     if modo_visao == "📊 Dashboard Ambulatorial":
@@ -343,5 +355,4 @@ else:
 
     # --- VISÃO 3: GERENCIAR OPERADORES (EXCLUSIVO ADMIN AUTENTICADO) ---
     elif modo_visao == "➕ Gerenciar Operadores":
-        # Chama a função que contém a aba de cadastro validada
-        tela_autenticacao()
+        componente_cadastro_usuario()
