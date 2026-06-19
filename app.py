@@ -14,6 +14,9 @@ def load_data():
     df = pd.read_csv("dados.csv")
     df['Dia_Atendimento'] = pd.to_datetime(df['Dia_Atendimento'])
     
+    # Filtro automático: Desconsiderar idades acima de 130 anos (limpeza de dados)
+    df = df[df['Idade'] <= 130]
+    
     # Criar coluna de Ano e Ano-Mês para agrupamentos posteriores
     df['Ano'] = df['Dia_Atendimento'].dt.year
     df['Ano_Mes'] = df['Dia_Atendimento'].dt.to_period('M').astype(str)
@@ -37,6 +40,15 @@ try:
         "Selecione o Ano:",
         options=anos_disponiveis,
         default=anos_disponiveis
+    )
+    
+    # Filtro dinâmico de Idade (Limitado a no máximo 130 anos)
+    idade_min, idade_max = int(df["Idade"].min()), int(df["Idade"].max())
+    idade_selecionada = st.sidebar.slider(
+        "Intervalo de Idade:",
+        min_value=idade_min,
+        max_value=idade_max,
+        value=(idade_min, idade_max)
     )
     
     # Filtro de Setor
@@ -65,6 +77,7 @@ try:
     # Aplicando os filtros ao DataFrame
     df_filtrado = df[
         (df["Ano"].isin(anos_selecionados)) &
+        (df["Idade"].between(idade_selecionada[0], idade_selecionada[1])) &
         (df["Setor_Atendimento"].isin(setores_selecionados)) &
         (df["Especialidade_Atendimento"].isin(especialidades_selecionadas)) &
         (df["Sexo"].isin(sexo_selecionado))
@@ -84,7 +97,6 @@ try:
     with row1_col1:
         st.subheader("Linha do Tempo de Atendimentos (Por Mês)")
         if len(df_filtrado) > 0:
-            # Agrupando por Ano_Mes para unificar por mês
             df_mes = df_filtrado.groupby('Ano_Mes').size().reset_index(name='Atendimentos')
             df_mes = df_mes.sort_values('Ano_Mes')
             
@@ -109,7 +121,6 @@ try:
     with row2_col1:
         st.subheader("Distribuição por Faixa Etária (10 em 10 anos)")
         if len(df_filtrado) > 0:
-            # Contando a quantidade de pacientes por grupo de idade
             df_idade = df_filtrado.groupby('Faixa_Etaria', observed=False).size().reset_index(name='Quantidade')
             
             fig_idade = px.bar(df_idade, x='Faixa_Etaria', y='Quantidade',
@@ -137,7 +148,7 @@ try:
     st.markdown("---")
     st.subheader("Visualização dos Dados Filtrados")
     st.dataframe(
-        df_filtrado[['Idaria' if 'Idaria' in df_filtrado else 'Idade', 'Faixa_Etaria', 'Sexo', 'Dia_Atendimento', 'Código_CID', 'Nome_Doença', 'Especialidade_Atendimento', 'Setor_Atendimento']], 
+        df_filtrado[['Idade', 'Faixa_Etaria', 'Sexo', 'Dia_Atendimento', 'Código_CID', 'Nome_Doença', 'Especialidade_Atendimento', 'Setor_Atendimento']], 
         use_container_width=True
     )
 
