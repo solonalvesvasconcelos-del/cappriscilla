@@ -68,8 +68,8 @@ st.markdown("""
 # --- FUNÇÃO DA TELA DE LOGIN ---
 def tela_login():
     st.markdown('<div style="text-align: center; margin-top: 40px;">', unsafe_allow_html=True)
-    st.markdown('<h1 class="main-title" style="display: inline-block; text-align: left;">HOSPITAL DE GUARNIÇÃO DE JOÃO PESSOA</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="sub-title">Diretoria de Saúde — Controlo de Acesso Restrito (HGuJP)</p>', unsafe_allow_html=True)
+    #st.markdown('<h1 class="main-title" style="display: inline-block; text-align: left;">HOSPITAL DE GUARNIÇÃO DE JOÃO PESSOA</h1>', unsafe_allow_html=True)
+    #st.markdown('<p class="sub-title">Diretoria de Saúde — Controlo de Acesso Restrito (HGuJP)</p>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
     # Cria colunas para centralizar o formulário na tela
