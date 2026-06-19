@@ -4,12 +4,12 @@ import plotly.express as px
 
 # Configuração da página e tema visual
 st.set_page_config(
-    page_title="HGJP - Dashboard de Atendimentos", 
+    page_title="HGuJP - Dashboard de Atendimentos", 
     page_icon="🏥",
     layout="wide"
 )
 
-# --- INJEÇÃO DE IDENTIDADE VISUAL (CSS INSPIRADO NO HGJP) ---
+# --- INJEÇÃO DE IDENTIDADE VISUAL (CSS INSPIRADO NO HGuJP) ---
 st.markdown("""
     <style>
         .stApp {
@@ -47,9 +47,9 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Título Customizado Estilo Portal Institucional
-st.markdown('<h1 class="main-title">HOSPITAL GERAL DE JOÃO PESSOA</h1>', unsafe_allow_html=True)
-st.markdown('<p class="sub-title">Diretoria de Saúde — Painel Analítico de Atendimentos Ambulatoriais</p>', unsafe_allow_html=True)
+# Título Atualizado com o Nome e Sigla Corretos
+st.markdown('<h1 class="main-title">HOSPITAL DE GUARNIÇÃO DE JOÃO PESSOA</h1>', unsafe_allow_html=True)
+st.markdown('<p class="sub-title">Diretoria de Saúde — Painel Analítico de Atendimentos Ambulatoriais (HGuJP)</p>', unsafe_allow_html=True)
 
 # Carregar os dados
 @st.cache_data
