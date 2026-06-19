@@ -45,9 +45,17 @@ def verificar_senha_segura(senha_pura, senha_armazenada):
     except Exception:
         return False
 
-# --- INICIALIZAÇÃO DE BANCO DE DADOS E LOGS ---
+# --- FUNÇÕES DE CARREGAMENTO E SALVAMENTO ---
+def carregar_usuarios():
+    with open(DB_USERS, "r") as f:
+        return json.load(f)
+
+def salvar_banco_usuarios(dados_usuarios):
+    with open(DB_USERS, "w") as f:
+        json.dump(dados_usuarios, f)
+
+# --- INICIALIZAÇÃO DE BANCO DE DADOS, LOGS E CORREÇÃO EM LOTE ---
 if not os.path.exists(DB_USERS):
-    # O admin mestre é criado nativamente com o perfil "admin"
     admin_senha_cripto = gerar_senha_segura("hgujp2026")
     dados_iniciais = {
         "admin": {
@@ -56,14 +64,29 @@ if not os.path.exists(DB_USERS):
             "criado_em": str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         }
     }
-    with open(DB_USERS, "w") as f:
-        json.dump(dados_iniciais, f)
+    salvar_banco_usuarios(dados_iniciais)
+else:
+    # --- MIGRATION: FORÇA TODOS OS USUÁRIOS EXISTENTES A SEREM ADMIN ---
+    try:
+        usuarios_atuais = carregar_usuarios()
+        alteracao_detectada = False
+        
+        for usuario, info in usuarios_atuais.items():
+            if info.get("perfil") != "admin":
+                usuarios_atuais[usuario]["perfil"] = "admin"
+                alteracao_detectada = True
+        
+        # Só reescreve o arquivo JSON se houver algum usuário para atualizar
+        if alteracao_detectada:
+            salvar_banco_usuarios(usuarios_atuais)
+    except Exception as e:
+        pass
 
 if not os.path.exists(LOG_FILE):
     df_logs_init = pd.DataFrame(columns=["Data_Hora", "Utilizador", "Perfil", "Evento", "Status"])
     df_logs_init.to_csv(LOG_FILE, index=False)
 
-# --- FUNÇÕES DE AUDITORIA E USUÁRIOS ---
+# --- FUNÇÕES DE AUDITORIA ---
 def registar_log(usuario, perfil, evento, status):
     """Regista um evento de auditoria detalhado no ficheiro CSV."""
     novo_log = {
@@ -76,10 +99,6 @@ def registar_log(usuario, perfil, evento, status):
     df_novo = pd.DataFrame([novo_log])
     df_novo.to_csv(LOG_FILE, mode='a', header=not os.path.exists(LOG_FILE), index=False)
 
-def carregar_usuarios():
-    with open(DB_USERS, "r") as f:
-        return json.load(f)
-
 def salvar_usuario(usuario, senha_pura, perfil_selecionado):
     usuarios = carregar_usuarios()
     if usuario in usuarios:
@@ -89,8 +108,7 @@ def salvar_usuario(usuario, senha_pura, perfil_selecionado):
         "perfil": perfil_selecionado,
         "criado_em": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
-    with open(DB_USERS, "w") as f:
-        json.dump(usuarios, f)
+    salvar_banco_usuarios(usuarios)
     return True
 
 # --- INICIALIZAÇÃO DO ESTADO DE SESSÃO ---
@@ -123,7 +141,7 @@ estilo_css = """
 st.markdown(estilo_css, unsafe_allow_html=True)
 
 
-# --- PAINEL EXCLUSIVO: GERENCIAR OPERADORES (APENAS PROFILE ADMIN) ---
+# --- PAINEL: GERENCIAR OPERADORES ---
 def componente_gerenciar_operadores():
     st.markdown('<h1 class="main-title">GERENCIAMENTO DE OPERADORES</h1>', unsafe_allow_html=True)
     st.markdown('<p class="sub-title">HGuJP — Controle de Credenciais, Níveis de Acesso e Perfis</p>', unsafe_allow_html=True)
@@ -158,7 +176,7 @@ def componente_gerenciar_operadores():
             with st.form(key="form_cadastro_operador", clear_on_submit=True):
                 st.markdown("<h4 style='color: #4CAF50; margin-top: 0;'>Dados do Novo Operador</h4>", unsafe_allow_html=True)
                 novo_usuario = st.text_input("Nome de Utilizador:", placeholder="Ex: ten.silva")
-                perfil_novo = st.selectbox("Perfil de Acesso:", ["viewer", "admin"], help="Admin: Acesso total | Viewer: Apenas relatórios")
+                perfil_novo = st.selectbox("Perfil de Acesso:", ["admin", "viewer"], help="Admin: Acesso total | Viewer: Apenas relatórios")
                 nova_senha = st.text_input("Definir Palavra-passe:", type="password", placeholder="Mínimo 6 caracteres")
                 confirmar_senha = st.text_input("Confirmar Palavra-passe:", type="password")
                 botao_cadastrar = st.form_submit_button("Confirmar e Salvar Conta", use_container_width=True)
@@ -307,7 +325,6 @@ else:
             # --- MONITORIZAÇÃO DE CLIQUES EM ELEMENTOS ESPECÍFICOS ---
             col1, col2, col3 = st.columns(3)
             
-            # Botões para monitorar intenção de visualização detalhada de métricas
             if col1.button("📊 Ver Detalhes: Total de Atendimentos", use_container_width=True):
                 registar_log(st.session_state.usuario_atual, st.session_state.perfil_atual, "Clicou: Detalhes Total Atendimentos", "Sucesso")
             col1.metric("Total de Atendimentos", f"{len(df_filtrado)}")
@@ -374,43 +391,4 @@ else:
             st.markdown('<div class="custom-hr"></div>', unsafe_allow_html=True)
             st.subheader("🗃️ Registro de Dados Filtrados")
             
-            # Botão de Exportação monitorizado
-            if st.button("📥 Exportar Planilha Filtrada para CSV", use_container_width=True):
-                registar_log(st.session_state.usuario_atual, st.session_state.perfil_atual, "Exportou Dados Ambulatoriais (CSV)", "Sucesso")
-                
-            df_exibicao = df_filtrado.copy()
-            df_exibicao['Idade_Exibição'] = df_exibicao['Idade_Tratada'].apply(lambda x: f"{int(x)}" if pd.notna(x) else "Inválida (>115)")
-            st.dataframe(df_exibicao[['Idade_Exibição', 'Faixa_Etaria', 'Sexo', 'Dia_Atendimento', 'Código_CID', 'Nome_Doença', 'Especialidade_Atendimento', 'Setor_Atendimento']], use_container_width=True)
-
-        except Exception as e:
-            st.error(f"Erro ao processar os dados. Detalhes: {e}")
-
-# --- VISÃO 2: LOGS DE AUDITORIA (RESTRITO AO ADMIN) ---
-    elif modo_visao == "📜 Logs de Auditoria" and st.session_state.perfil_atual == "admin":
-        st.markdown('<h1 class="main-title">LOGS DE AUDITORIA DO SISTEMA</h1>', unsafe_allow_html=True)
-        st.markdown('<p class="sub-title">HGuJP — Histórico de Acessos, Cliques, Filtros e Ações de Utilizadores</p>', unsafe_allow_html=True)
-        
-        try:
-            df_logs = pd.read_csv(LOG_FILE)
-            df_logs = df_logs.iloc[::-1]
-            
-            c1, c2 = st.columns(2)
-            c1.metric("Total de Eventos Gravados", len(df_logs))
-            c2.metric("Falhas de Login Detetadas", len(df_logs[df_logs["Status"].str.contains("Falha", na=False)]))
-            
-            st.markdown('<div class="custom-hr"></div>', unsafe_allow_html=True)
-            st.dataframe(df_logs, use_container_width=True)
-            
-            if st.button("🚨 Limpar Histórico de Logs", use_container_width=True):
-                df_vazio = pd.DataFrame(columns=["Data_Hora", "Utilizador", "Perfil", "Evento", "Status"])
-                df_vazio.to_csv(LOG_FILE, index=False)
-                registar_log("admin", "admin", "Limpeza de Logs de Auditoria", "Sucesso")
-                st.success("Histórico limpo!")
-                st.rerun()
-                    
-        except Exception as e:
-            st.error(f"Erro ao ler o ficheiro de auditoria: {e}")
-
-    # --- VISÃO 3: GERENCIAR OPERADORES (RESTRITO AO ADMIN) ---
-    elif modo_visao == "➕ Gerenciar Operadores" and st.session_state.perfil_atual == "admin":
-        componente_gerenciar_operadores()
+            if st.button("📥 Exportar Planilha Filtrada para CSV", use_container_width=True
